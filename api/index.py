@@ -18,15 +18,19 @@ def get_random_string(length=8):
 
 def create_account():
     try:
-        # ዶሜይን ማምጣት
+        # 1. ያሉትን ዶሜይኖች በሙሉ እናምጣ
         domains_resp = requests.get(f"{BASE_URL}/domains", timeout=5)
         if domains_resp.status_code != 200: return None
         
         domain_list = domains_resp.json()['hydra:member']
         if not domain_list: return None
-        domain = domain_list[0]['domain']
         
-        # አካውንት መፍጠር
+        # 🔥 ወሳኝ ለውጥ: ሁሌም የመጀመሪያውን ከመምረጥ፣ በዘፈቀደ እንምረጥ (Facebook እንዳይዘጋው)
+        # አሁን የተለያዩ ዶሜይኖችን ይሞክራል
+        domain_obj = random.choice(domain_list)
+        domain = domain_obj['domain']
+        
+        # 2. አካውንት መፍጠር
         username = get_random_string(6)
         password = get_random_string(8)
         address = f"{username}@{domain}"
@@ -80,7 +84,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🚀 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "👋 **Temp Mail Bot (Pro)**\n\n"
+        "👋 **Temp Mail Bot (Pro V2)**\n\n"
         "Facebook እና TikTok በይለፍ ቃል የተጠበቀ ኢሜይል ይፈጥራል። 👇", 
         reply_markup=reply_markup, parse_mode='Markdown'
     )
@@ -90,7 +94,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == 'gen_email':
-        await query.answer("⚙️ በመክፈት ላይ...")
+        await query.answer("⚙️ ፕሮፌሽናል ዶሜይን እየመረጥኩ ነው...")
         account = create_account()
         
         if account:
@@ -103,7 +107,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("♻️ ሌላ አዲስ", callback_data='gen_email')]
             ]
             
-            # 🔥 እዚህ ጋር ነው Password የተጨመረው
             await query.edit_message_text(
                 f"✅ **ኢሜይል ተፈጥሯል!**\n\n"
                 f"📧 **Email:** `{email}`\n"
