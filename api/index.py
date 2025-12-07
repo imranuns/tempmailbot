@@ -10,9 +10,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
 
-# 🔥 መፍትሄ: ሰርቨሩን ቀይረነዋል! (From Mail.tm -> Mails.gw)
-# Mails.gw ፌስቡክ ያልዘጋቸው አዳዲስ ዶሜይኖች አሉት።
-BASE_URL = "https://api.mails.gw"
+# 🔥 መፍትሄ: ትክክለኛው የ Mails.gw አድራሻ (ያለ 's')
+BASE_URL = "https://api.mail.gw"
 
 # --- Helper Functions ---
 
@@ -23,21 +22,20 @@ def create_account():
     try:
         # 1. ያሉትን ዶሜይኖች በሙሉ እናምጣ
         domains_resp = requests.get(f"{BASE_URL}/domains", timeout=5)
-        if domains_resp.status_code != 200: return None
+        if domains_resp.status_code != 200: 
+            print(f"Domain Error: {domains_resp.status_code}")
+            return None
         
         domain_list = domains_resp.json()['hydra:member']
         if not domain_list: return None
         
-        # 🔥 ምርምር ውጤት (Research Result): 
-        # Facebook የሚወዳቸው .com, .net, .org ዶሜይኖች ካሉ እነሱን ብቻ እንምረጥ።
-        # እነዚህ 'Premium' ስለሆኑ አይዘጉም።
+        # 🔥 Facebook የሚወዳቸው .com, .net, .org ዶሜይኖች ካሉ እነሱን ብቻ እንምረጥ።
         try:
             premium_domains = [d for d in domain_list if any(ext in d['domain'] for ext in ['.com', '.net', '.org'])]
             
             if premium_domains:
                 domain_obj = random.choice(premium_domains)
             else:
-                # ካልተገኘ በዘፈቀደ እንምረጥ (ግን ከ Mails.gw ስለሆነ ይሻላል)
                 domain_obj = random.choice(domain_list)
         except:
             domain_obj = random.choice(domain_list)
@@ -56,8 +54,11 @@ def create_account():
         
         if reg_resp.status_code == 201:
             return {"email": address, "password": password}
-        return None
-    except:
+        else:
+            print(f"Account Create Error: {reg_resp.text}")
+            return None
+    except Exception as e:
+        print(f"Exception: {e}")
         return None
 
 def get_token(email, password):
@@ -99,7 +100,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "👋 **Temp Mail Bot (Mails.gw)**\n\n"
-        "ሰርቨሩ ወደ **Mails.gw** ተቀይሯል! አሁን የሚሰጠው ዶሜይኖች ለ Facebook ተመራጭ ናቸው። 👇", 
+        "ሰርቨሩ ወደ **Mails.gw** ተስተካክሏል! አሁን የሚሰጠው ዶሜይኖች ለ Facebook ተመራጭ ናቸው። 👇", 
         reply_markup=reply_markup, parse_mode='Markdown'
     )
 
@@ -129,7 +130,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
-            await query.edit_message_text("❌ Error. Try Again.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Try Again", callback_data='gen_email')]]))
+            await query.edit_message_text("❌ Error. Try Again (Check Logs).", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Try Again", callback_data='gen_email')]]))
 
     elif data.startswith('chk|'):
         try:
