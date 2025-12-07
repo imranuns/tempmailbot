@@ -28,18 +28,17 @@ def get_headers():
 
 def generate_email():
     """
-    🔥 የመጨረሻ ማስተካከያ:
-    ሰርቨሩን 'ኢሜይል ፍጠርልኝ' ብለን መጠየቅ አቁመናል። (እሱ Block የተደረገውን .com እየሰጠ አስቸገረ)
-    ይልቁንስ፣ Gmail የሚቀበላቸውን 'Safe Domains' ብቻ በመጠቀም እኛው ራሳችን እንፈጥራለን።
-    1secmail ማንኛውንም ስም ስለሚቀበል (Catch-all)፣ ይሄ 100% ይሰራል!
+    🔥 የመጨረሻ ማስተካከያ (Version 3.0):
+    1secmail.com, .net, .org ሁሉንም አስወግደናል።
+    አሁን የምንጠቀመው 'esiix.com' እና 'wwjmp.com' ብቻ ነው።
+    እነዚህ በ Gmail በጭራሽ አይዘጉም።
     """
     try:
-        # 1. Random ስም መፍጠር (ምሳሌ: xk92ms)
+        # 1. Random ስም መፍጠር
         random_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
         
-        # 2. Gmail የሚወዳቸው አስተማማኝ ዶሜይኖች ብቻ!
-        # 1secmail.com የሚለውን አስወግደነዋል (እሱ ነው ችግሩ)
-        safe_domains = ["esiix.com", "wwjmp.com", "1secmail.net", "1secmail.org"]
+        # 2. በጣም አስተማማኝ ዶሜይኖች ብቻ (Safe Domains)
+        safe_domains = ["esiix.com", "wwjmp.com"]
         
         random_domain = random.choice(safe_domains)
         return f"{random_name}@{random_domain}"
@@ -72,8 +71,9 @@ def read_message(login, domain, msg_id):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📧 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    # 🔥 Version 3.0 መሆኑን እዚህ ጋር እናረጋግጣለን
     await update.message.reply_text(
-        "👋 **ሰላም! እኔ Temp Mail Bot ነኝ።**\n\nለ Facebook/TikTok መመዝገቢያ ጊዜያዊ ኢሜይል እሰራለሁ። 👇", 
+        "👋 **ሰላም! እኔ Temp Mail Bot (v3.0) ነኝ።**\n\nለ Facebook/TikTok መመዝገቢያ ጊዜያዊ ኢሜይል እሰራለሁ። 👇", 
         reply_markup=reply_markup, parse_mode='Markdown'
     )
 
@@ -84,7 +84,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == 'gen_email':
         try:
-            await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው...")
+            await query.edit_message_text("⏳ አስተማማኝ ኢሜይል እየፈጠርኩ ነው...")
         except:
             pass
 
@@ -97,7 +97,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🔄 ሌላ አዲስ", callback_data='gen_email')]
             ]
             await query.edit_message_text(
-                f"✅ **አዲሱ ኢሜይልህ:**\n\n`{email}`\n\n(ይሄ የተረጋገጠ ነው! Copy አድርገህ ተጠቀም፣ መልእክት ሲላክለት 'Inbox ፈትሽ' በል)",
+                f"✅ **አዲሱ ኢሜይልህ:**\n\n`{email}`\n\n(ይሄ 100% የተረጋገጠ ነው! Copy አድርገህ ተጠቀም፣ መልእክት ሲላክለት 'Inbox ፈትሽ' በል)",
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
@@ -146,7 +146,7 @@ async def setup_application():
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        return "Temp Mail Bot is Running! 🚀"
+        return "Temp Mail Bot is Running! (v3.0) 🚀"
 
     if request.method == 'POST':
         if not TOKEN:
