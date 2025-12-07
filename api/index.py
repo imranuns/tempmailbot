@@ -12,21 +12,25 @@ TOKEN = os.environ.get("TOKEN")
 def generate_email():
     try:
         url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
-        return requests.get(url).json()[0]
+        # Timeout ጨምረናል ኔትወርኩ ከዘገየ እንዳይጠብቅ
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+             return response.json()[0]
+        return None
     except:
         return None
 
 def check_email(login, domain):
     try:
         url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}"
-        return requests.get(url).json()
+        return requests.get(url, timeout=5).json()
     except:
         return []
 
 def read_message(login, domain, msg_id):
     try:
         url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={login}&domain={domain}&id={msg_id}"
-        return requests.get(url).json()
+        return requests.get(url, timeout=5).json()
     except:
         return None
 
@@ -40,7 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer() # Loading እንዳይል
     data = query.data
 
     if data == 'gen_email':
@@ -55,6 +59,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ **አዲሱ ኢሜይልህ:**\n\n`{email}`\n\n(Copy አድርገህ ተጠቀም፣ ኮድ ሲላክ 'Inbox ፈትሽ' በል)",
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
+        else:
+            # 🔥 ማስተካከያ: ኢሜይል ካልመጣ ይህ መልእክት ይታያል
+            await query.edit_message_text("❌ የኔትወርክ ችግር አጋጥሟል! እባክህ ትንሽ ቆይተህ 'አዲስ ፍጠር' የሚለውን ድጋሚ ሞክር።")
+
     elif data.startswith('check|'):
         try:
             _, login, domain = data.split('|')
