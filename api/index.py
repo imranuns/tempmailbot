@@ -1,6 +1,7 @@
 import os
 import requests
 import asyncio
+import json
 from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -8,38 +9,42 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
 
-# 🔥 መፍትሄው: ራስን እንደ Browser ማስመሰል (User-Agent)
+# 🔥 ራስን እንደ እውነተኛ Browser ማስመሰል (More Headers)
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Connection": "keep-alive"
 }
 
-# --- 1secmail API Functions ---
+# --- 1secmail API Functions (With Short Timeout) ---
 
 def generate_email():
-    # አማራጭ 1: 1secmail
     url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
     try:
-        response = requests.get(url, headers=HEADERS, timeout=10).json()
+        # Timeout ወደ 4 ሰከንድ ዝቅ ተደርጓል (Vercel እንዳይጨናነቅ)
+        response = requests.get(url, headers=HEADERS, timeout=4).json()
         return response[0]
-    except:
-        # አማራጭ 2 (1secmail እምቢ ካለ): ዝም ብለን የውሸት እንፍጠር (ለሙከራ)
-        # return "test@1secmail.com" # ይሄን ለጊዜው እንለፈው
+    except Exception as e:
+        print(f"API Error (Generate): {e}")
         return None
 
 def check_email(login, domain):
     url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}"
     try:
-        response = requests.get(url, headers=HEADERS, timeout=10).json()
+        response = requests.get(url, headers=HEADERS, timeout=4).json()
         return response
-    except:
+    except Exception as e:
+        print(f"API Error (Check): {e}")
         return []
 
 def read_message(login, domain, msg_id):
     url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={login}&domain={domain}&id={msg_id}"
     try:
-        response = requests.get(url, headers=HEADERS, timeout=10).json()
+        response = requests.get(url, headers=HEADERS, timeout=4).json()
         return response
-    except:
+    except Exception as e:
+        print(f"API Error (Read): {e}")
         return None
 
 # --- Telegram Bot Logic ---
@@ -54,13 +59,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer() # ይሄ loading እንዳያበዛ ያደርጋል
+    await query.answer() 
     data = query.data
 
     if data == 'gen_email':
-        # "እየሰራሁ ነው..." የሚል ምልክት ለማሳየት
         try:
-            await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው... ትንሽ ይጠብቁ...")
+            # ፈጣን ምላሽ ለመስጠት
+            await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው...")
         except:
             pass
 
@@ -77,9 +82,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
-            # Error ከመጣ ድጋሚ እንዲሞክር Button እንስጠው
             keyboard = [[InlineKeyboardButton("🔄 ድጋሚ ሞክር", callback_data='gen_email')]]
-            await query.edit_message_text("❌ የኔትወርክ ችግር! 1secmail አልመለሰም። እባክህ ደጋግመህ ሞክር።", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text("❌ የኔትወርክ ችግር! እባክህ ድጋሚ ሞክር።", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith('check|'):
         try:
@@ -87,8 +91,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             messages = check_email(login, domain)
             
             if not messages:
-                # መልእክት ከሌለ ዝም ብሎ Notification (Alert) ያሳያል እንጂ ሜሴጁን አይቀይርም
-                await query.answer("📭 ምንም መልእክት የለም! (Refresh)", show_alert=True)
+                await query.answer("📭 ባዶ ነው! ምንም መልእክት አልገባም (Refresh)", show_alert=True)
             else:
                 last_msg = messages[0]
                 full_msg = read_message(login, domain, last_msg['id'])
@@ -103,7 +106,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"📬 **መልእክት:**\n\n**ከ:** `{sender}`\n**ርዕስ:** `{subject}`\n\n{body}\n",
                         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
                     )
-        except:
+        except Exception as e:
+             print(f"Check Error: {e}")
              await query.answer("Error checking mail", show_alert=True)
 
     elif data.startswith('back|'):
@@ -130,21 +134,26 @@ async def get_application():
 # --- Vercel Route ---
 @app.route('/', methods=['GET'])
 def home():
-    return "Bot is Running! (Header Fixed)"
+    return "Bot is Running! (Timeout Fixed)"
 
 @app.route('/api/index', methods=['POST'])
 def webhook():
     if not TOKEN:
-        return jsonify({"error": "No Token"}), 500
+        return jsonify({"error": "No Token"}), 200 # 200 እንመልሳለን Telegram እንዳይቆም
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         bot_app = loop.run_until_complete(get_application())
         
-        update = Update.de_json(request.get_json(force=True), bot_app.bot)
-        loop.run_until_complete(bot_app.process_update(update))
+        # ደህንነቱ የተጠበቀ Update processing
+        try:
+            update = Update.de_json(request.get_json(force=True), bot_app.bot)
+            loop.run_until_complete(bot_app.process_update(update))
+        except Exception as inner_e:
+            print(f"Update Processing Error: {inner_e}")
+        
         loop.close()
-        return "OK"
+        return "OK" # ሁሌም OK እንመልሳለን
     except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({"error": str(e)}), 500
+        print(f"Fatal Error: {e}")
+        return "OK" # Error ቢፈጠርም OK እንላለን
