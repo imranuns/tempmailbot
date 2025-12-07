@@ -6,14 +6,12 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # ⚠️ TOKEN ከ Vercel Environment Variable ይመጣል
-# ፋይሉን GitHub ላይ ስትጭነው Tokenህን እዚህ ውስጥ አትጻፍ!
 TOKEN = os.environ.get("TOKEN")
 
 # --- 1secmail API Functions ---
 
 def generate_email():
     """አዲስ ኢሜይል ይፈጥራል"""
-    # 1secmail API በመጠቀም
     url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
     try:
         response = requests.get(url).json()
@@ -89,7 +87,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not messages:
                 await query.answer("📭 ባዶ ነው! ምንም መልእክት አልገባም።", show_alert=True)
             else:
-                # የመጨረሻውን መልእክት እናንብብ
                 last_msg_id = messages[0]['id']
                 full_msg = read_message(login, domain, last_msg_id)
                 
@@ -128,19 +125,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def main(request):
     """Vercel ይጠራዋል"""
-    # ቦቱን መገንባት
     if not TOKEN:
-        return "No Token Found"
+        print("❌ Error: No TOKEN found in environment variables!")
+        return "No Token"
         
     application = ApplicationBuilder().token(TOKEN).build()
+    
+    # 🔥 ወሳኝ ለውጥ: ቦቱ ስራ ከመጀመሩ በፊት Initialize መደረግ አለበት!
+    await application.initialize()
 
-    # ትዛዞችን መጨመር
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
 
-    # Update ማስተናገድ
     try:
-        # Vercel request body ማግኘት
         if request.method == "POST":
             data = await request.json()
             update = Update.de_json(data, application.bot)
@@ -148,9 +145,10 @@ async def main(request):
             return "Success"
         return "Bot is running!"
     except Exception as e:
+        print(f"❌ Error in main: {e}")
         return f"Error: {e}"
 
-# Vercel entry point (Standard HTTP Server handler)
+# Vercel entry point
 from http.server import BaseHTTPRequestHandler
 
 class handler(BaseHTTPRequestHandler):
@@ -160,24 +158,29 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(b"Temp Mail Bot is Active!")
 
     def do_POST(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        
-        # Async loop በውስጥ ማሽከርከር
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Request objectን አስመስሎ መላክ (Mocking minimal request object for our async main)
-        class MockRequest:
-            def __init__(self, data):
-                self.data = data
-                self.method = "POST"
-            async def json(self):
-                return json.loads(self.data)
-        
-        mock_req = MockRequest(post_data)
-        loop.run_until_complete(main(mock_req))
-        
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            class MockRequest:
+                def __init__(self, data):
+                    self.data = data
+                    self.method = "POST"
+                async def json(self):
+                    return json.loads(self.data)
+            
+            mock_req = MockRequest(post_data)
+            loop.run_until_complete(main(mock_req))
+            loop.close()
+            
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+        except Exception as e:
+            print(f"❌ Server Error: {e}")
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(str(e).encode())
