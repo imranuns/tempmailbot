@@ -80,8 +80,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🚀 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "👋 **Temp Mail Bot (Speed Mode)**\n\n"
-        "Facebook እና TikTok በፍጥነት እንዲከፍት ተደርጎ የተስተካከለ። 👇", 
+        "👋 **Temp Mail Bot (Pro)**\n\n"
+        "Facebook እና TikTok በይለፍ ቃል የተጠበቀ ኢሜይል ይፈጥራል። 👇", 
         reply_markup=reply_markup, parse_mode='Markdown'
     )
 
@@ -103,9 +103,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("♻️ ሌላ አዲስ", callback_data='gen_email')]
             ]
             
+            # 🔥 እዚህ ጋር ነው Password የተጨመረው
             await query.edit_message_text(
                 f"✅ **ኢሜይል ተፈጥሯል!**\n\n"
-                f"`{email}`\n\n"
+                f"📧 **Email:** `{email}`\n"
+                f"🔑 **Password:** `{password}`\n\n"
                 "⚠️ Facebook ላይ ይህን ኢሜይል አስገባና Code ሲልክልህ **'Inbox ፈትሽ'** በል።",
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
@@ -135,7 +137,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     await query.edit_message_text(
                         f"📭 **ባዶ ነው!**\n\n"
-                        f"`{email}`\n\n"
+                        f"👤 `{email}`\n"
+                        f"🔑 `{password}`\n\n"
                         "⏳ የ Facebook ኮድ ለመምጣት ትንሽ ይቆያል። ደጋግመህ Check በል።",
                         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
                     )
@@ -182,7 +185,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, password, email = data.split('|')
         callback_str = f"chk|{password}|{email}"
         keyboard = [[InlineKeyboardButton("📨 Inbox ፈትሽ", callback_data=callback_str)], [InlineKeyboardButton("♻️ ሌላ አዲስ", callback_data='gen_email')]]
-        await query.edit_message_text(f"✅ **ኢሜይልህ:**\n`{email}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        await query.edit_message_text(f"✅ **ኢሜይልህ:**\n`{email}`\n🔑 **Password:** `{password}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # --- App Setup ---
 async def setup_application():
@@ -196,7 +199,7 @@ async def setup_application():
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        return "Temp Mail Bot (Speed Mode) is Running! 🚀"
+        return "Temp Mail Bot (With Password) is Running! 🚀"
 
     if request.method == 'POST':
         if not TOKEN:
