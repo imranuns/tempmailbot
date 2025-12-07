@@ -81,20 +81,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"✅ **ኢሜይልህ:**\n`{email}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # --- Main App Setup ---
-global_bot_app = None
-
-async def get_bot_app():
-    global global_bot_app
-    if global_bot_app is None:
-        global_bot_app = ApplicationBuilder().token(TOKEN).build()
-        await global_bot_app.initialize()
-        global_bot_app.add_handler(CommandHandler("start", start))
-        global_bot_app.add_handler(CallbackQueryHandler(button_handler))
-    return global_bot_app
+# 🔥 ለውጥ: Global Variable ጠፍቷል! ለእያንዳንዱ ጥያቄ አዲስ ቦት ይፈጠራል።
+async def setup_application():
+    application = ApplicationBuilder().token(TOKEN).build()
+    await application.initialize()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    return application
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
-def webhook(): # <--- ስሙ ተቀይሯል (ከ handler ወደ webhook)
+def webhook():
     if request.method == 'GET':
         return "Temp Mail Bot is Running! 🚀"
 
@@ -102,12 +99,18 @@ def webhook(): # <--- ስሙ ተቀይሯል (ከ handler ወደ webhook)
         if not TOKEN:
             return jsonify({"error": "No Token"}), 500
         try:
+            # ለእያንዳንዱ ጥያቄ አዲስ Loop እና አዲስ Bot App
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            bot_app = loop.run_until_complete(get_bot_app())
+            
+            bot_app = loop.run_until_complete(setup_application())
+            
             update = Update.de_json(request.get_json(force=True), bot_app.bot)
             loop.run_until_complete(bot_app.process_update(update))
+            
             loop.close()
             return "OK"
         except Exception as e:
+            # Error log በደንብ እንዲታይ
+            print(f"Error: {e}")
             return jsonify({"error": str(e)}), 500
