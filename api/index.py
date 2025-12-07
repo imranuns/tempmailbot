@@ -8,12 +8,18 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
 
+# 🔥 መፍትሄው ይሄ ነው: ራስን እንደ Chrome Browser ማስመሰል
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+}
+
 # --- Helper Functions ---
 def generate_email():
     try:
         url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
-        # Timeout ጨምረናል ኔትወርኩ ከዘገየ እንዳይጠብቅ
-        response = requests.get(url, timeout=5)
+        # 👇 እዚህ ጋር headers=HEADERS መጨመር ግዴታ ነው!
+        response = requests.get(url, headers=HEADERS, timeout=5)
         if response.status_code == 200:
              return response.json()[0]
         return None
@@ -23,31 +29,45 @@ def generate_email():
 def check_email(login, domain):
     try:
         url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}"
-        return requests.get(url, timeout=5).json()
+        # 👇 እዚህም headers=HEADERS እንጨምራለን
+        response = requests.get(url, headers=HEADERS, timeout=5)
+        if response.status_code == 200:
+            return response.json()
+        return []
     except:
         return []
 
 def read_message(login, domain, msg_id):
     try:
         url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={login}&domain={domain}&id={msg_id}"
-        return requests.get(url, timeout=5).json()
+        # 👇 እዚህም headers=HEADERS እንጨምራለን
+        response = requests.get(url, headers=HEADERS, timeout=5)
+        if response.status_code == 200:
+            return response.json()
+        return None
     except:
         return None
 
 # --- Bot Commands ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📧 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "👋 **ሰላም! እኔ Temp Mail Bot ነኝ።**\n\nለ Facebook/TikTok መመዝገቢያ ጊዜያዊ ኢሜይል እሰራለሁ። 👇", 
-        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
+        reply_markup=reply_markup, parse_mode='Markdown'
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer() # Loading እንዳይል
+    await query.answer() 
     data = query.data
 
     if data == 'gen_email':
+        try:
+            await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው...")
+        except:
+            pass
+
         email = generate_email()
         if email:
             login, domain = email.split('@')
@@ -60,17 +80,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
-            # 🔥 ማስተካከያ: ኢሜይል ካልመጣ ይህ መልእክት ይታያል
-            await query.edit_message_text("❌ የኔትወርክ ችግር አጋጥሟል! እባክህ ትንሽ ቆይተህ 'አዲስ ፍጠር' የሚለውን ድጋሚ ሞክር።")
+            keyboard = [[InlineKeyboardButton("🔄 ድጋሚ ሞክር", callback_data='gen_email')]]
+            await query.edit_message_text("❌ የኔትወርክ ችግር! እባክህ ትንሽ ቆይተህ 'ድጋሚ ሞክር' የሚለውን ንካ።", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith('check|'):
         try:
             _, login, domain = data.split('|')
             messages = check_email(login, domain)
+            
             if not messages:
-                await query.answer("📭 ምንም መልእክት የለም!", show_alert=True)
+                await query.answer("📭 ባዶ ነው! ምንም መልእክት የለም", show_alert=True)
             else:
-                full_msg = read_message(login, domain, messages[0]['id'])
+                last_msg = messages[0]
+                full_msg = read_message(login, domain, last_msg['id'])
                 if full_msg:
                     sender = full_msg.get('from')
                     subject = full_msg.get('subject')
@@ -82,6 +104,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
         except:
              await query.answer("Error checking mail", show_alert=True)
+             
     elif data.startswith('back|'):
         _, login, domain = data.split('|')
         email = f"{login}@{domain}"
@@ -89,7 +112,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"✅ **ኢሜይልህ:**\n`{email}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # --- Main App Setup ---
-# 🔥 ለውጥ: Global Variable ጠፍቷል! ለእያንዳንዱ ጥያቄ አዲስ ቦት ይፈጠራል።
 async def setup_application():
     application = ApplicationBuilder().token(TOKEN).build()
     await application.initialize()
@@ -107,7 +129,6 @@ def webhook():
         if not TOKEN:
             return jsonify({"error": "No Token"}), 500
         try:
-            # ለእያንዳንዱ ጥያቄ አዲስ Loop እና አዲስ Bot App
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
@@ -119,6 +140,5 @@ def webhook():
             loop.close()
             return "OK"
         except Exception as e:
-            # Error log በደንብ እንዲታይ
             print(f"Error: {e}")
             return jsonify({"error": str(e)}), 500
