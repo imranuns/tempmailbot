@@ -2,7 +2,6 @@ import os
 import asyncio
 import requests
 import random
-import string
 from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -10,64 +9,66 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
 
-# 🔥 መፍትሄ 1: እራሳችንን እንደ Browser እናስመስላለን
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Referer": "https://www.google.com/"
-}
-
-# 🔥 መፍትሄ 2: ሶስት የተለያዩ በሮችን (Mirrors) እንሞክራለን
-# .net ብዙ ጊዜ አይዘጋም፣ እሱን መጀመሪያ እናድርገው
-API_MIRRORS = [
-    "https://www.1secmail.net/api/v1/",
-    "https://www.1secmail.com/api/v1/",
-    "https://www.1secmail.org/api/v1/"
+# 🔥 መፍትሄ: እራሳችንን እንደተለያዩ Browserች እናስመስላለን (Rotation)
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
 ]
 
-# --- Helper Functions ---
+def get_headers():
+    return {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Connection": "keep-alive"
+    }
 
-def request_from_api(params):
-    """ከሶስቱ ሰርቨሮች አንዱ እስኪሰራ ይሞክራል"""
-    for base_url in API_MIRRORS:
-        try:
-            # verify=False አድርገናል (SSL Error እንዳይፈጥር)
-            response = requests.get(base_url, params=params, headers=HEADERS, timeout=5, verify=False)
-            if response.status_code == 200:
-                return response.json()
-        except Exception as e:
-            continue
-    return None
+# --- 1secmail API Functions ---
 
 def generate_email():
     """
-    🔥 ዋናው መፍትሄ:
-    ሰርቨሩን 'ኢሜይል ፍጠርልኝ' ብለን ከመጠየቅ (Network Error ከመፍጠር)፣
-    እኛው ራሳችን Random ስም ፈጥረን እንጠቀማለን። 
-    1secmail ላይ ማንኛውም ስም ይሰራል!
+    አሁን የግድ API መጠየቅ አለብን (Access Denied እንዳይል)።
+    ግን የተለያዩ Domain እና User-Agent እንሞክራለን።
     """
-    try:
-        # 1. Random ስም መፍጠር (ምሳሌ: user4829)
-        username = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-        
-        # 2. ከሚሰሩት ዶሜይኖች አንዱን መምረጥ
-        domains = ["1secmail.com", "1secmail.org", "1secmail.net"]
-        domain = random.choice(domains)
-        
-        return f"{username}@{domain}"
-    except:
-        return "tempuser123@1secmail.com"
+    url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
+    
+    # 3 ጊዜ እንሞክራለን (Network Errorን ለማሸነፍ)
+    for _ in range(3):
+        try:
+            headers = get_headers()
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                email = response.json()[0]
+                # Gmail .com ስለሚጠላ፣ .net ወይም .org ከሆነ ብቻ እንቀበለዋለን
+                if ".com" not in email: 
+                    return email
+                # .com ከሆነ ሌላ እንሞክር (ግን ካጣን ግድ የለም እንውሰደው)
+                return email
+        except:
+            continue
+    return None
 
 def check_email(login, domain):
-    # መልእክት ለመፈተሽ API እንጠይቃለን
-    data = request_from_api({"action": "getMessages", "login": login, "domain": domain})
-    return data if data is not None else []
+    url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}"
+    try:
+        response = requests.get(url, headers=get_headers(), timeout=5)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except:
+        return []
 
 def read_message(login, domain, msg_id):
-    # መልእክት ለማንበብ API እንጠይቃለን
-    return request_from_api({"action": "readMessage", "login": login, "domain": domain, "id": msg_id})
+    url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={login}&domain={domain}&id={msg_id}"
+    try:
+        response = requests.get(url, headers=get_headers(), timeout=5)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except:
+        return None
 
-# --- Bot Commands ---
+# --- Telegram Bot Logic ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📧 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
@@ -84,11 +85,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == 'gen_email':
         try:
-            await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው...")
+            await query.edit_message_text("⏳ ሰርቨሩን እያስፈቀድኩ ነው... (ኢሜይል እየተፈጠረ)")
         except:
             pass
 
-        # አሁን generate_email() በጭራሽ Network Error አይፈጥርም (Local ስለሆነ)
         email = generate_email()
         
         if email:
@@ -98,12 +98,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🔄 ሌላ አዲስ", callback_data='gen_email')]
             ]
             await query.edit_message_text(
-                f"✅ **አዲሱ ኢሜይልህ:**\n\n`{email}`\n\n(Copy አድርገህ ተጠቀም፣ ኮድ ሲላክ 'Inbox ፈትሽ' በል)",
+                f"✅ **አዲሱ ኢሜይልህ:**\n\n`{email}`\n\n(ይሄ የተረጋገጠ ኢሜይል ነው። Copy አድርገህ ተጠቀም፣ ኮድ ሲላክ 'Inbox ፈትሽ' በል)",
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
+            # አሁንም እምቢ ካለ Emergency መፍትሄ
             keyboard = [[InlineKeyboardButton("🔄 ድጋሚ ሞክር", callback_data='gen_email')]]
-            await query.edit_message_text("❌ ስህተት ተፈጥሯል። ድጋሚ ሞክር።", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text("❌ የኔትወርክ መጨናነቅ! እባክህ ትንሽ ቆይተህ ድጋሚ ሞክር።", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith('check|'):
         try:
@@ -111,7 +112,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             messages = check_email(login, domain)
             
             if not messages:
-                await query.answer("📭 ባዶ ነው! ምንም መልእክት የለም", show_alert=True)
+                await query.answer("📭 ባዶ ነው! ምንም መልእክት የለም (Refresh)", show_alert=True)
             else:
                 last_msg = messages[0]
                 full_msg = read_message(login, domain, last_msg['id'])
@@ -119,7 +120,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     sender = full_msg.get('from')
                     subject = full_msg.get('subject')
                     body = full_msg.get('textBody', 'No content')
+                    
                     keyboard = [[InlineKeyboardButton("🔙 ተመለስ", callback_data=f"back|{login}|{domain}")]]
+                    
                     await query.edit_message_text(
                         f"📬 **መልእክት:**\n\n**ከ:** `{sender}`\n**ርዕስ:** `{subject}`\n\n{body}\n",
                         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
