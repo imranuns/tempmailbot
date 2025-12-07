@@ -8,47 +8,51 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
 
-# 🔥 መፍትሄው ይሄ ነው: ራስን እንደ Chrome Browser ማስመሰል
+# 🔥 መፍትሄ 1: እራሳችንን እንደ Browser እናስመስላለን
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Referer": "https://www.google.com/"
 }
 
-# --- Helper Functions ---
+# 🔥 መፍትሄ 2: ሶስት የተለያዩ በሮችን (Mirrors) እንሞክራለን
+API_MIRRORS = [
+    "https://www.1secmail.com/api/v1/",
+    "https://www.1secmail.org/api/v1/",
+    "https://www.1secmail.net/api/v1/"
+]
+
+# --- Helper Functions (With Retry Logic) ---
+
+def request_from_api(params):
+    """ከሶስቱ ሰርቨሮች አንዱ እስኪሰራ ይሞክራል"""
+    for base_url in API_MIRRORS:
+        try:
+            # እያንዳንዱን ሰርቨር ተራ በተራ መሞከር
+            response = requests.get(base_url, params=params, headers=HEADERS, timeout=4)
+            if response.status_code == 200:
+                return response.json()
+        except Exception as e:
+            # አንዱ ካልሰራ ወደ ቀጣዩ ይዘላል (Errorን ችላ ብሎ)
+            print(f"Failed {base_url}: {e}")
+            continue
+    return None
+
 def generate_email():
-    try:
-        url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
-        # 👇 እዚህ ጋር headers=HEADERS መጨመር ግዴታ ነው!
-        response = requests.get(url, headers=HEADERS, timeout=5)
-        if response.status_code == 200:
-             return response.json()[0]
-        return None
-    except:
-        return None
+    data = request_from_api({"action": "genRandomMailbox", "count": 1})
+    if data:
+        return data[0]
+    return None
 
 def check_email(login, domain):
-    try:
-        url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}"
-        # 👇 እዚህም headers=HEADERS እንጨምራለን
-        response = requests.get(url, headers=HEADERS, timeout=5)
-        if response.status_code == 200:
-            return response.json()
-        return []
-    except:
-        return []
+    data = request_from_api({"action": "getMessages", "login": login, "domain": domain})
+    return data if data is not None else []
 
 def read_message(login, domain, msg_id):
-    try:
-        url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={login}&domain={domain}&id={msg_id}"
-        # 👇 እዚህም headers=HEADERS እንጨምራለን
-        response = requests.get(url, headers=HEADERS, timeout=5)
-        if response.status_code == 200:
-            return response.json()
-        return None
-    except:
-        return None
+    return request_from_api({"action": "readMessage", "login": login, "domain": domain, "id": msg_id})
 
 # --- Bot Commands ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📧 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -64,7 +68,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == 'gen_email':
         try:
-            await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው...")
+            await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው... (ሰርቨር እየቀያየርኩ)")
         except:
             pass
 
@@ -81,7 +85,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             keyboard = [[InlineKeyboardButton("🔄 ድጋሚ ሞክር", callback_data='gen_email')]]
-            await query.edit_message_text("❌ የኔትወርክ ችግር! እባክህ ትንሽ ቆይተህ 'ድጋሚ ሞክር' የሚለውን ንካ።", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text("❌ የኔትወርክ ችግር! ሁሉም ሰርቨሮች አልመለሱም። እባክህ ትንሽ ቆይተህ ድጋሚ ሞክር።", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith('check|'):
         try:
