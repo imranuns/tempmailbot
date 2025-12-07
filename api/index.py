@@ -25,9 +25,21 @@ def create_account():
         domain_list = domains_resp.json()['hydra:member']
         if not domain_list: return None
         
-        # 🔥 ወሳኝ ለውጥ: ሁሌም የመጀመሪያውን ከመምረጥ፣ በዘፈቀደ እንምረጥ (Facebook እንዳይዘጋው)
-        # አሁን የተለያዩ ዶሜይኖችን ይሞክራል
-        domain_obj = random.choice(domain_list)
+        # 🔥 ምርምር ውጤት (Research Result): 
+        # Facebook አሮጌ ዶሜይኖችን ስለሚዘጋ፣ እኛ 'አዳዲሶቹን' (Newest) ብቻ እንመርጣለን።
+        # በ 'createdAt' (የተፈጠረበት ቀን) sort እናደርጋለን።
+        try:
+            # አዳዲሶቹ ወደ ላይ እንዲመጡ (Newest First)
+            domain_list.sort(key=lambda x: x.get('createdAt', ''), reverse=True)
+            
+            # በጣም አዳዲስ ከሆኑት 5 ዶሜይኖች አንዱን እንምረጥ
+            # እነዚህ ገና በ Facebook "Blacklist" አልገቡም
+            top_new_domains = domain_list[:5]
+            domain_obj = random.choice(top_new_domains)
+        except:
+            # Sorting ካልሰራ ዝም ብሎ ይምረጥ
+            domain_obj = random.choice(domain_list)
+            
         domain = domain_obj['domain']
         
         # 2. አካውንት መፍጠር
@@ -84,8 +96,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🚀 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "👋 **Temp Mail Bot (Pro V2)**\n\n"
-        "Facebook እና TikTok በይለፍ ቃል የተጠበቀ ኢሜይል ይፈጥራል። 👇", 
+        "👋 **Temp Mail Bot (Fresh Domain)**\n\n"
+        "በ Facebook ያልተዘጉ **አዳዲስ ዶሜይኖችን** ብቻ በመምረጥ አካውንት ይፈጥራል። 👇", 
         reply_markup=reply_markup, parse_mode='Markdown'
     )
 
@@ -94,7 +106,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == 'gen_email':
-        await query.answer("⚙️ ፕሮፌሽናል ዶሜይን እየመረጥኩ ነው...")
+        await query.answer("⚙️ Fresh Domain እየፈለኩ ነው...")
         account = create_account()
         
         if account:
@@ -111,7 +123,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ **ኢሜይል ተፈጥሯል!**\n\n"
                 f"📧 **Email:** `{email}`\n"
                 f"🔑 **Password:** `{password}`\n\n"
-                "⚠️ Facebook ላይ ይህን ኢሜይል አስገባና Code ሲልክልህ **'Inbox ፈትሽ'** በል።",
+                "⚠️ ይህ አዲስ ዶሜይን ስለሆነ Facebook ኮድ ለመላክ ፍቃደኛ ይሆናል። አስገብተህ **'Inbox ፈትሽ'** በል።",
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
