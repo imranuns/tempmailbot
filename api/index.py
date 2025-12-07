@@ -3,7 +3,7 @@ import asyncio
 import requests
 import random
 import string
-import time
+import json
 from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -11,49 +11,73 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
 
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-]
+# --- Mail.tm API Functions (The Professional Choice) ---
+BASE_URL = "https://api.mail.tm"
 
-def get_headers():
-    return {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Connection": "keep-alive"
-    }
+def get_random_string(length=8):
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
-# --- 1secmail API ---
-
-def generate_email():
-    # 1secmail.comን ሙሉ ለሙሉ እናስወግዳለን (ለ Gmail ችግር ስላለበት)
+def create_account():
+    """
+    1secmailን ትተን Mail.tm እንጠቀማለን።
+    ይሄኛው በዘፈቀደ ሳይሆን Register አድርጎ ነው የሚሰጠን። (100% Legit)
+    """
     try:
-        random_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-        # esiix.com እና wwjmp.com በጣም ፈጣን እና አስተማማኝ ናቸው
-        safe_domains = ["esiix.com", "wwjmp.com"] 
-        random_domain = random.choice(safe_domains)
-        return f"{random_name}@{random_domain}"
+        # 1. Available Domains ማምጣት
+        domains_resp = requests.get(f"{BASE_URL}/domains")
+        if domains_resp.status_code != 200:
+            return None
+        
+        # የመጀመሪያውን ዶሜይን እንምረጥ (ብዙ ጊዜ አዳዲስ ናቸው)
+        domain = domains_resp.json()['hydra:member'][0]['domain']
+        
+        # 2. አካውንት መፍጠር
+        username = get_random_string(6)
+        password = get_random_string(5) # ቀላል ፓስወርድ
+        address = f"{username}@{domain}"
+        
+        headers = {"Content-Type": "application/json"}
+        data = {"address": address, "password": password}
+        
+        reg_resp = requests.post(f"{BASE_URL}/accounts", json=data, headers=headers)
+        
+        if reg_resp.status_code == 201:
+            # ኢሜይሉን እና ፓስወርዱን እንመልሳለን (ለ Login ያስፈልጋል)
+            return {"email": address, "password": password}
+        return None
+    except Exception as e:
+        print(f"Error creating account: {e}")
+        return None
+
+def get_token(email, password):
+    """ኢሜይሉን ለማንበብ Token መቀበል (Login)"""
+    try:
+        data = {"address": email, "password": password}
+        resp = requests.post(f"{BASE_URL}/token", json=data)
+        if resp.status_code == 200:
+            return resp.json()['token']
+        return None
     except:
-        return "user123@esiix.com"
+        return None
 
-def check_email(login, domain):
-    # መልእክት አለ ወይ?
-    url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}"
+def check_messages(token):
+    """መልእክት መፈተሽ"""
     try:
-        response = requests.get(url, headers=get_headers(), timeout=5)
-        if response.status_code == 200:
-            return response.json()
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = requests.get(f"{BASE_URL}/messages", headers=headers)
+        if resp.status_code == 200:
+            return resp.json()['hydra:member']
         return []
     except:
         return []
 
-def read_message(login, domain, msg_id):
-    # መልእክቱን አንብብ
-    url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={login}&domain={domain}&id={msg_id}"
+def get_message_content(token, msg_id):
+    """የመልእክቱን ዝርዝር ማምጣት"""
     try:
-        response = requests.get(url, headers=get_headers(), timeout=5)
-        if response.status_code == 200:
-            return response.json()
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = requests.get(f"{BASE_URL}/messages/{msg_id}", headers=headers)
+        if resp.status_code == 200:
+            return resp.json()
         return None
     except:
         return None
@@ -64,84 +88,96 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📧 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "👋 **ሰላም! እኔ Temp Mail Bot ነኝ።**\n\nለ Facebook/TikTok መመዝገቢያ ጊዜያዊ ኢሜይል እሰራለሁ። 👇", 
+        "👋 **ሰላም! እኔ Temp Mail Bot (Pro) ነኝ።**\n\n"
+        "አዲሱ እና አስተማማኙን Mail.tm ሰርቨር እየተጠቀምኩ ነው።\n"
+        "Facebook/TikTok ለመክፈት 'አዲስ ኢሜይል' ይበሉ። 👇", 
         reply_markup=reply_markup, parse_mode='Markdown'
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    # እዚህ ጋር answer() አንልም፣ Loading እንዲያሳይ እንፈልጋለን
     data = query.data
 
     if data == 'gen_email':
-        await query.answer("⏳ ኢሜይል እየተፈጠረ ነው...")
-        email = generate_email()
+        await query.answer("⏳ አዲስ አካውንት እየከፈትኩ ነው...")
         
-        if email:
-            login, domain = email.split('@')
+        # አካውንት መፍጠር
+        account = create_account()
+        
+        if account:
+            email = account['email']
+            password = account['password']
+            
+            # 🔥 ፓስወርዱን button ላይ እንደብቀዋለን (ለ Check እንዲመች)
+            # Format: chk|password|email
+            callback_str = f"chk|{password}|{email}"
+            
             keyboard = [
-                [InlineKeyboardButton("📩 Inbox ፈትሽ (Refresh)", callback_data=f"check|{login}|{domain}")],
+                [InlineKeyboardButton("📩 Inbox ፈትሽ", callback_data=callback_str)],
                 [InlineKeyboardButton("🔄 ሌላ አዲስ", callback_data='gen_email')]
             ]
+            
             await query.edit_message_text(
-                f"✅ **አዲሱ ኢሜይልህ:**\n\n`{email}`\n\n(ይሄ ይሰራል! Gmail ላይ ሄደህ ለዚህ ኢሜይል መልእክት ላክና፣ ከ 10 ሰከንድ በኋላ 'Inbox ፈትሽ' በል)",
+                f"✅ **አዲሱ ኢሜይልህ:**\n\n`{email}`\n\n"
+                "(ይሄ በ Mail.tm የተመዘገበ ህጋዊ ኢሜይል ነው!)\n"
+                "Copy አድርገህ ተጠቀም፣ ከዚያ 'Inbox ፈትሽ' በል።",
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
-            await query.answer("Error!", show_alert=True)
+            await query.edit_message_text("❌ ስህተት! ድጋሚ ሞክር።", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 ድጋሚ ሞክር", callback_data='gen_email')]]))
 
-    elif data.startswith('check|'):
-        # 🔥 ለውጥ: ዝም እንዳይል "እየፈተሸኩ ነው..." እንለዋለን
-        _, login, domain = data.split('|')
-        
-        # አሁን ያለውን ሰዓት ለ User ለማሳየት (እንዲያውቅ)
-        current_time = time.strftime("%H:%M:%S") 
-        
-        keyboard = [
-            [InlineKeyboardButton("📩 Inbox ፈትሽ (Refresh)", callback_data=f"check|{login}|{domain}")],
-            [InlineKeyboardButton("🔄 ሌላ አዲስ", callback_data='gen_email')]
-        ]
-
+    elif data.startswith('chk|'):
+        # መረጃውን ከ Button መልሰን እናወጣለን
         try:
-            # 1. መልእክት ቀይረን "Checking..." እንበል
-            try:
-                await query.edit_message_text(f"⏳ Inbox እየፈተሸኩ ነው... ({current_time})", reply_markup=InlineKeyboardMarkup(keyboard))
-            except:
-                pass # Text ካልተቀየረ ችግር የለም
+            _, password, email = data.split('|')
+            
+            await query.answer("⏳ Inbox እየፈተሸኩ ነው...")
+            
+            # 1. Login (Token ማግኘት)
+            token = get_token(email, password)
+            
+            if not token:
+                await query.answer("⚠️ Login Failed! ኢሜይሉ ጊዜው አልፎ ሊሆን ይችላል።", show_alert=True)
+                return
 
-            # 2. API እንጠይቅ
-            messages = check_email(login, domain)
+            # 2. Messages መፈተሽ
+            messages = check_messages(token)
+            
+            keyboard = [
+                [InlineKeyboardButton("📩 Inbox ፈትሽ (Refresh)", callback_data=data)],
+                [InlineKeyboardButton("🔄 ሌላ አዲስ", callback_data='gen_email')]
+            ]
             
             if not messages:
-                # 3. መልእክት ከሌለ እንንገረው
                 await query.edit_message_text(
-                    f"📭 **Inbox ባዶ ነው!** ({current_time})\n\nኢሜይሉ ገና አልደረሰ ይሆናል። ከ 5 ሰከንድ በኋላ ድጋሚ ይሞክሩ።\n\n`{login}@{domain}`",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode='Markdown'
+                    f"📭 **Inbox ባዶ ነው!**\n\n`{email}`\n\n(ኢሜይሉ ለመድረስ ትንሽ ሊቆይ ይችላል፣ ደጋግመህ ሞክር።)",
+                    reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
                 )
             else:
-                # 4. መልእክት ከተገኘ
+                # መልእክት ተገኘ!
                 last_msg = messages[0]
-                full_msg = read_message(login, domain, last_msg['id'])
-                if full_msg:
-                    sender = full_msg.get('from')
-                    subject = full_msg.get('subject')
-                    body = full_msg.get('textBody', 'No content')
+                full_content = get_message_content(token, last_msg['id'])
+                
+                if full_content:
+                    sender = full_content.get('from', {}).get('address', 'Unknown')
+                    subject = full_content.get('subject', 'No Subject')
+                    body = full_content.get('text', 'No Content') # Text body
                     
-                    back_kb = [[InlineKeyboardButton("🔙 ተመለስ", callback_data=f"back|{login}|{domain}")]]
+                    # ወደ ኋላ መመለሻ (Original Data እንይዛለን)
+                    back_kb = [[InlineKeyboardButton("🔙 ተመለስ", callback_data=f"back|{password}|{email}")]]
                     
                     await query.edit_message_text(
-                        f"📬 **አዲስ መልእክት!**\n\n**ከ:** `{sender}`\n**ርዕስ:** `{subject}`\n\n{body}\n",
+                        f"📬 **አዲስ መልእክት!**\n\n**ከ:** `{sender}`\n**ርዕስ:** `{subject}`\n\n**መልእክት:**\n{body[:4000]}", # ቴሌግራም ከ4096 በላይ አይቀበልም
                         reply_markup=InlineKeyboardMarkup(back_kb), parse_mode='Markdown'
                     )
         except Exception as e:
-             await query.answer(f"Error: {str(e)}", show_alert=True)
-             
+            print(f"Check Error: {e}")
+            await query.answer("Error checking mail", show_alert=True)
+
     elif data.startswith('back|'):
-        await query.answer()
-        _, login, domain = data.split('|')
-        email = f"{login}@{domain}"
-        keyboard = [[InlineKeyboardButton("📩 Inbox ፈትሽ", callback_data=f"check|{login}|{domain}")], [InlineKeyboardButton("🔄 ሌላ አዲስ", callback_data='gen_email')]]
+        _, password, email = data.split('|')
+        callback_str = f"chk|{password}|{email}"
+        keyboard = [[InlineKeyboardButton("📩 Inbox ፈትሽ", callback_data=callback_str)], [InlineKeyboardButton("🔄 ሌላ አዲስ", callback_data='gen_email')]]
         await query.edit_message_text(f"✅ **ኢሜይልህ:**\n`{email}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # --- App Setup ---
@@ -156,7 +192,7 @@ async def setup_application():
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        return "Bot Running with Better UX! 🚀"
+        return "Temp Mail Bot (Mail.tm Edition) is Running! 🚀"
 
     if request.method == 'POST':
         if not TOKEN:
