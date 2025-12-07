@@ -230,9 +230,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             current_time = time.strftime("%H:%M:%S")
             try:
                 await query.edit_message_text(
-                    f"📭 **ባዶ ነው!** ({current_time})\n\n"
+                    f"📭 **Inbox ባዶ ነው!** ({current_time})\n\n"
                     f"ኢሜይል: `{email_display}`\n\n"
-                    "Facebook ኮድ ለመላክ ይዘገያል። ደጋግመህ ሞክር።",
+                    "የ Facebook መልእክት ለመድረስ ጊዜ ሊወስድ ይችላል። እባክዎ ትንሽ ቆይተው ድጋሚ ይሞክሩ።",
                     reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
                 )
             except:
