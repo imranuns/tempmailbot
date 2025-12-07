@@ -1,6 +1,8 @@
 import os
 import asyncio
 import requests
+import random
+import string
 from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -16,39 +18,53 @@ HEADERS = {
 }
 
 # 🔥 መፍትሄ 2: ሶስት የተለያዩ በሮችን (Mirrors) እንሞክራለን
+# .net ብዙ ጊዜ አይዘጋም፣ እሱን መጀመሪያ እናድርገው
 API_MIRRORS = [
+    "https://www.1secmail.net/api/v1/",
     "https://www.1secmail.com/api/v1/",
-    "https://www.1secmail.org/api/v1/",
-    "https://www.1secmail.net/api/v1/"
+    "https://www.1secmail.org/api/v1/"
 ]
 
-# --- Helper Functions (With Retry Logic) ---
+# --- Helper Functions ---
 
 def request_from_api(params):
     """ከሶስቱ ሰርቨሮች አንዱ እስኪሰራ ይሞክራል"""
     for base_url in API_MIRRORS:
         try:
-            # እያንዳንዱን ሰርቨር ተራ በተራ መሞከር
-            response = requests.get(base_url, params=params, headers=HEADERS, timeout=4)
+            # verify=False አድርገናል (SSL Error እንዳይፈጥር)
+            response = requests.get(base_url, params=params, headers=HEADERS, timeout=5, verify=False)
             if response.status_code == 200:
                 return response.json()
         except Exception as e:
-            # አንዱ ካልሰራ ወደ ቀጣዩ ይዘላል (Errorን ችላ ብሎ)
-            print(f"Failed {base_url}: {e}")
             continue
     return None
 
 def generate_email():
-    data = request_from_api({"action": "genRandomMailbox", "count": 1})
-    if data:
-        return data[0]
-    return None
+    """
+    🔥 ዋናው መፍትሄ:
+    ሰርቨሩን 'ኢሜይል ፍጠርልኝ' ብለን ከመጠየቅ (Network Error ከመፍጠር)፣
+    እኛው ራሳችን Random ስም ፈጥረን እንጠቀማለን። 
+    1secmail ላይ ማንኛውም ስም ይሰራል!
+    """
+    try:
+        # 1. Random ስም መፍጠር (ምሳሌ: user4829)
+        username = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+        
+        # 2. ከሚሰሩት ዶሜይኖች አንዱን መምረጥ
+        domains = ["1secmail.com", "1secmail.org", "1secmail.net"]
+        domain = random.choice(domains)
+        
+        return f"{username}@{domain}"
+    except:
+        return "tempuser123@1secmail.com"
 
 def check_email(login, domain):
+    # መልእክት ለመፈተሽ API እንጠይቃለን
     data = request_from_api({"action": "getMessages", "login": login, "domain": domain})
     return data if data is not None else []
 
 def read_message(login, domain, msg_id):
+    # መልእክት ለማንበብ API እንጠይቃለን
     return request_from_api({"action": "readMessage", "login": login, "domain": domain, "id": msg_id})
 
 # --- Bot Commands ---
@@ -68,11 +84,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == 'gen_email':
         try:
-            await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው... (ሰርቨር እየቀያየርኩ)")
+            await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው...")
         except:
             pass
 
+        # አሁን generate_email() በጭራሽ Network Error አይፈጥርም (Local ስለሆነ)
         email = generate_email()
+        
         if email:
             login, domain = email.split('@')
             keyboard = [
@@ -85,7 +103,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             keyboard = [[InlineKeyboardButton("🔄 ድጋሚ ሞክር", callback_data='gen_email')]]
-            await query.edit_message_text("❌ የኔትወርክ ችግር! ሁሉም ሰርቨሮች አልመለሱም። እባክህ ትንሽ ቆይተህ ድጋሚ ሞክር።", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text("❌ ስህተት ተፈጥሯል። ድጋሚ ሞክር።", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith('check|'):
         try:
