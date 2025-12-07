@@ -30,7 +30,7 @@ def generate_email():
     """
     አሁን የግድ API መጠየቅ አለብን (Access Denied እንዳይል)።
     ግን የተለያዩ Domain እና User-Agent እንሞክራለን።
-    ከከሸፈ ግን እራሳችን እንፈጥራለን (Fallback)።
+    ከከሸፈ ግን እራሳችን እንፈጥራለን (Fallback) - ግን .com አንጠቀምም!
     """
     url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
     
@@ -43,20 +43,22 @@ def generate_email():
                 email = response.json()[0]
                 if ".com" not in email: # .com ካልሆነ እንመርጠዋለን
                     return email
+                # .com ከሆነም እንሞክረው (ከ API ስለመጣ ሊሰራ ይችላል)
                 return email
         except:
             continue
             
     # 2. 🔥 FALLBACK (ዋናው መፍትሄ): API እምቢ ካለ እራሳችን እንፍጠር!
-    # 1secmail ማንኛውንም ስም ይቀበላል (Catch-all)
+    # ማሳሰቢያ: 1secmail.comን እዚህ አናካትትም (እሱ ነው Access Denied የሚለው)
     try:
-        # Random ስም እንፍጠር (ምሳሌ: xk92ms + @1secmail.net)
+        # Random ስም እንፍጠር (ምሳሌ: xk92ms)
         random_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-        domains = ["1secmail.net", "1secmail.org", "1secmail.com"]
+        # እነዚህ ዶሜይኖች ብዙ ጊዜ አይዘጉም (Catch-all ናቸው)
+        domains = ["1secmail.net", "1secmail.org", "esiix.com", "wwjmp.com"]
         random_domain = random.choice(domains)
         return f"{random_name}@{random_domain}"
     except:
-        return "tempuser123@1secmail.net"
+        return "tempuser123@1secmail.org"
 
 def check_email(login, domain):
     url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}"
