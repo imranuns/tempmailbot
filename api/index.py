@@ -1,17 +1,17 @@
 import os
-import json
-import asyncio
 import requests
+import asyncio
+from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# ⚠️ TOKEN ከ Vercel Environment Variable ይመጣል
+# --- Setup ---
+app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
 
 # --- 1secmail API Functions ---
 
 def generate_email():
-    """አዲስ ኢሜይል ይፈጥራል"""
     url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
     try:
         response = requests.get(url).json()
@@ -20,7 +20,6 @@ def generate_email():
         return None
 
 def check_email(login, domain):
-    """ኢሜይል ይፈትሻል"""
     url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}"
     try:
         response = requests.get(url).json()
@@ -29,7 +28,6 @@ def check_email(login, domain):
         return []
 
 def read_message(login, domain, msg_id):
-    """መልእክት ያነባል"""
     url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={login}&domain={domain}&id={msg_id}"
     try:
         response = requests.get(url).json()
@@ -40,24 +38,16 @@ def read_message(login, domain, msg_id):
 # --- Telegram Bot Logic ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start ትዛዝ"""
-    keyboard = [
-        [InlineKeyboardButton("📧 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]
-    ]
+    keyboard = [[InlineKeyboardButton("📧 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "👋 **ሰላም! እኔ Temp Mail Bot ነኝ።**\n\n"
-        "ለ Facebook, TikTok ወይም ለሌላ ድረገጽ መመዝገቢያ "
-        "ጊዜያዊ ኢሜይል እሰራለሁ። 👇", 
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        "👋 **ሰላም! እኔ Temp Mail Bot ነኝ።**\n\nለ Facebook/TikTok መመዝገቢያ ጊዜያዊ ኢሜይል እሰራለሁ። 👇", 
+        reply_markup=reply_markup, parse_mode='Markdown'
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Buttons ሲነኩ የሚሰራ"""
     query = update.callback_query
     await query.answer()
-
     data = query.data
 
     if data == 'gen_email':
@@ -65,45 +55,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if email:
             login, domain = email.split('@')
             keyboard = [
-                [InlineKeyboardButton("📩 Inbox ፈትሽ (Refresh)", callback_data=f"check|{login}|{domain}")],
-                [InlineKeyboardButton("🔄 ሌላ አዲስ ኢሜይል", callback_data='gen_email')]
+                [InlineKeyboardButton("📩 Inbox ፈትሽ", callback_data=f"check|{login}|{domain}")],
+                [InlineKeyboardButton("🔄 ሌላ አዲስ", callback_data='gen_email')]
             ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
             await query.edit_message_text(
-                f"✅ **አዲሱ ኢሜይልህ:**\n\n`{email}`\n\n"
-                "👆 ይህንን Copy አድርገህ ተጠቀም። ኮድ ሲላክ 'Inbox ፈትሽ' የሚለውን ንካ።",
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
+                f"✅ **አዲሱ ኢሜይልህ:**\n\n`{email}`\n\n(Copy አድርገህ ተጠቀም፣ ኮድ ሲላክ 'Inbox ፈትሽ' በል)",
+                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
-        else:
-            await query.edit_message_text("❌ ችግር ተፈጥሯል! እባክህ ድጋሚ ሞክር።")
 
     elif data.startswith('check|'):
         try:
             _, login, domain = data.split('|')
             messages = check_email(login, domain)
-            
             if not messages:
-                await query.answer("📭 ባዶ ነው! ምንም መልእክት አልገባም።", show_alert=True)
+                await query.answer("📭 ምንም መልእክት የለም!", show_alert=True)
             else:
-                last_msg_id = messages[0]['id']
-                full_msg = read_message(login, domain, last_msg_id)
-                
+                last_msg = messages[0]
+                full_msg = read_message(login, domain, last_msg['id'])
                 if full_msg:
                     sender = full_msg.get('from')
                     subject = full_msg.get('subject')
-                    body = full_msg.get('textBody', 'No text content')
-                    
+                    body = full_msg.get('textBody', 'No content')
                     keyboard = [[InlineKeyboardButton("🔙 ተመለስ", callback_data=f"back|{login}|{domain}")]]
-                    
                     await query.edit_message_text(
-                        f"📬 **አዲስ መልእክት!**\n\n"
-                        f"**ከ:** `{sender}`\n"
-                        f"**ርዕስ:** `{subject}`\n\n"
-                        f"**መልእክት:**\n{body}\n",
-                        reply_markup=InlineKeyboardMarkup(keyboard),
-                        parse_mode='Markdown'
+                        f"📬 **መልእክት:**\n\n**ከ:** `{sender}`\n**ርዕስ:** `{subject}`\n\n{body}\n",
+                        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
                     )
         except:
              await query.answer("Error checking mail", show_alert=True)
@@ -112,75 +88,51 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, login, domain = data.split('|')
         email = f"{login}@{domain}"
         keyboard = [
-            [InlineKeyboardButton("📩 Inbox ፈትሽ (Refresh)", callback_data=f"check|{login}|{domain}")],
-            [InlineKeyboardButton("🔄 ሌላ አዲስ ኢሜይል", callback_data='gen_email')]
+            [InlineKeyboardButton("📩 Inbox ፈትሽ", callback_data=f"check|{login}|{domain}")],
+            [InlineKeyboardButton("🔄 ሌላ አዲስ", callback_data='gen_email')]
         ]
-        await query.edit_message_text(
-            f"✅ **ኢሜይልህ:**\n`{email}`",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(f"✅ **ኢሜይልህ:**\n`{email}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-# --- Vercel Webhook Handler ---
+# --- Main Bot Application ---
+# Global application instance to avoid rebuilding on every request
+global_app = None
 
-async def main(request):
-    """Vercel ይጠራዋል"""
+async def get_application():
+    global global_app
+    if global_app is None:
+        global_app = ApplicationBuilder().token(TOKEN).build()
+        await global_app.initialize()
+        global_app.add_handler(CommandHandler("start", start))
+        global_app.add_handler(CallbackQueryHandler(button_handler))
+    return global_app
+
+# --- Vercel Route (Flask) ---
+
+@app.route('/', methods=['GET'])
+def home():
+    return "Temp Mail Bot is Running! 🚀 (Use POST for Webhook)"
+
+@app.route('/api/index', methods=['POST'])
+def webhook():
     if not TOKEN:
-        print("❌ Error: No TOKEN found in environment variables!")
-        return "No Token"
+        return jsonify({"error": "No Token"}), 500
         
-    application = ApplicationBuilder().token(TOKEN).build()
-    
-    # 🔥 ወሳኝ ለውጥ: ቦቱ ስራ ከመጀመሩ በፊት Initialize መደረግ አለበት!
-    await application.initialize()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button_handler))
-
     try:
-        if request.method == "POST":
-            data = await request.json()
-            update = Update.de_json(data, application.bot)
-            await application.process_update(update)
-            return "Success"
-        return "Bot is running!"
+        # Run async code inside Flask
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        bot_app = loop.run_until_complete(get_application())
+        
+        update = Update.de_json(request.get_json(force=True), bot_app.bot)
+        loop.run_until_complete(bot_app.process_update(update))
+        loop.close()
+        
+        return "OK"
     except Exception as e:
-        print(f"❌ Error in main: {e}")
-        return f"Error: {e}"
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
 
-# Vercel entry point
-from http.server import BaseHTTPRequestHandler
-
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Temp Mail Bot is Active!")
-
-    def do_POST(self):
-        try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            class MockRequest:
-                def __init__(self, data):
-                    self.data = data
-                    self.method = "POST"
-                async def json(self):
-                    return json.loads(self.data)
-            
-            mock_req = MockRequest(post_data)
-            loop.run_until_complete(main(mock_req))
-            loop.close()
-            
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"OK")
-        except Exception as e:
-            print(f"❌ Server Error: {e}")
-            self.send_response(500)
-            self.end_headers()
-            self.wfile.write(str(e).encode())
+# For local testing
+if __name__ == '__main__':
+    app.run(debug=True)
