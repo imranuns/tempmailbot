@@ -2,6 +2,7 @@ import os
 import requests
 import asyncio
 import json
+import traceback
 from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -9,7 +10,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
 
-# 🔥 ራስን እንደ እውነተኛ Browser ማስመሰል (More Headers)
+# 🔥 ራስን እንደ እውነተኛ Browser ማስመሰል
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -17,12 +18,11 @@ HEADERS = {
     "Connection": "keep-alive"
 }
 
-# --- 1secmail API Functions (With Short Timeout) ---
+# --- 1secmail API Functions ---
 
 def generate_email():
     url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
     try:
-        # Timeout ወደ 4 ሰከንድ ዝቅ ተደርጓል (Vercel እንዳይጨናነቅ)
         response = requests.get(url, headers=HEADERS, timeout=4).json()
         return response[0]
     except Exception as e:
@@ -64,7 +64,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == 'gen_email':
         try:
-            # ፈጣን ምላሽ ለመስጠት
             await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው...")
         except:
             pass
@@ -107,7 +106,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
                     )
         except Exception as e:
-             print(f"Check Error: {e}")
              await query.answer("Error checking mail", show_alert=True)
 
     elif data.startswith('back|'):
@@ -119,36 +117,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         await query.edit_message_text(f"✅ **ኢሜይልህ:**\n`{email}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
+async def process_update(token, data):
+    """Updateን ፕሮሰስ ለማድረግ የሚረዳ ዋና Function"""
+    app_builder = ApplicationBuilder().token(token).build()
+    await app_builder.initialize()
+    
+    app_builder.add_handler(CommandHandler("start", start))
+    app_builder.add_handler(CallbackQueryHandler(button_handler))
+    
+    update = Update.de_json(data, app_builder.bot)
+    await app_builder.process_update(update)
+    
+    # Shutdown አያስፈልግም፣ Vercel ራሱ ይዘጋዋል
+
 # --- Vercel Route ---
 @app.route('/', methods=['GET'])
 def home():
-    return "Bot is Running! (Loop Issue Fixed)"
+    return "Bot is Running! (Asyncio Fixed)"
 
 @app.route('/api/index', methods=['POST'])
 def webhook():
     if not TOKEN:
         return jsonify({"error": "No Token"}), 200
+    
     try:
-        # 🔥 FIX: ሁሌም አዲስ Loop እና አዲስ App መገንባት (Global መጠቀም ያቆማል)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # መረጃውን ከ Telegram መቀበል
+        data = request.get_json(force=True)
         
-        bot_app = ApplicationBuilder().token(TOKEN).build()
-        loop.run_until_complete(bot_app.initialize()) # Initialize application
-        
-        # Handlers መጨመር
-        bot_app.add_handler(CommandHandler("start", start))
-        bot_app.add_handler(CallbackQueryHandler(button_handler))
-        
-        # Update ማስተናገድ
-        update = Update.de_json(request.get_json(force=True), bot_app.bot)
-        loop.run_until_complete(bot_app.process_update(update))
-        
-        # ጨርሰን Shutdown ማድረግ
-        loop.run_until_complete(bot_app.shutdown())
-        loop.close()
+        # Asyncio.run በመጠቀም Loop issueን ማስወገድ
+        asyncio.run(process_update(TOKEN, data))
         
         return "OK"
     except Exception as e:
-        print(f"Fatal Error: {e}")
+        # ስህተቱን ለ Vercel Log ማሳየት (Debugging)
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
         return "OK"
