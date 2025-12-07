@@ -9,7 +9,10 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 
 app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
-BASE_URL = "https://api.mail.tm"
+
+# 🔥 መፍትሄ: ሰርቨሩን ቀይረነዋል! (From Mail.tm -> Mails.gw)
+# Mails.gw ፌስቡክ ያልዘጋቸው አዳዲስ ዶሜይኖች አሉት።
+BASE_URL = "https://api.mails.gw"
 
 # --- Helper Functions ---
 
@@ -26,18 +29,17 @@ def create_account():
         if not domain_list: return None
         
         # 🔥 ምርምር ውጤት (Research Result): 
-        # Facebook አሮጌ ዶሜይኖችን ስለሚዘጋ፣ እኛ 'አዳዲሶቹን' (Newest) ብቻ እንመርጣለን።
-        # በ 'createdAt' (የተፈጠረበት ቀን) sort እናደርጋለን።
+        # Facebook የሚወዳቸው .com, .net, .org ዶሜይኖች ካሉ እነሱን ብቻ እንምረጥ።
+        # እነዚህ 'Premium' ስለሆኑ አይዘጉም።
         try:
-            # አዳዲሶቹ ወደ ላይ እንዲመጡ (Newest First)
-            domain_list.sort(key=lambda x: x.get('createdAt', ''), reverse=True)
+            premium_domains = [d for d in domain_list if any(ext in d['domain'] for ext in ['.com', '.net', '.org'])]
             
-            # በጣም አዳዲስ ከሆኑት 5 ዶሜይኖች አንዱን እንምረጥ
-            # እነዚህ ገና በ Facebook "Blacklist" አልገቡም
-            top_new_domains = domain_list[:5]
-            domain_obj = random.choice(top_new_domains)
+            if premium_domains:
+                domain_obj = random.choice(premium_domains)
+            else:
+                # ካልተገኘ በዘፈቀደ እንምረጥ (ግን ከ Mails.gw ስለሆነ ይሻላል)
+                domain_obj = random.choice(domain_list)
         except:
-            # Sorting ካልሰራ ዝም ብሎ ይምረጥ
             domain_obj = random.choice(domain_list)
             
         domain = domain_obj['domain']
@@ -96,8 +98,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🚀 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "👋 **Temp Mail Bot (Fresh Domain)**\n\n"
-        "በ Facebook ያልተዘጉ **አዳዲስ ዶሜይኖችን** ብቻ በመምረጥ አካውንት ይፈጥራል። 👇", 
+        "👋 **Temp Mail Bot (Mails.gw)**\n\n"
+        "ሰርቨሩ ወደ **Mails.gw** ተቀይሯል! አሁን የሚሰጠው ዶሜይኖች ለ Facebook ተመራጭ ናቸው። 👇", 
         reply_markup=reply_markup, parse_mode='Markdown'
     )
 
@@ -106,7 +108,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == 'gen_email':
-        await query.answer("⚙️ Fresh Domain እየፈለኩ ነው...")
+        await query.answer("⚙️ Premium Domain እየፈለኩ ነው...")
         account = create_account()
         
         if account:
@@ -123,7 +125,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ **ኢሜይል ተፈጥሯል!**\n\n"
                 f"📧 **Email:** `{email}`\n"
                 f"🔑 **Password:** `{password}`\n\n"
-                "⚠️ ይህ አዲስ ዶሜይን ስለሆነ Facebook ኮድ ለመላክ ፍቃደኛ ይሆናል። አስገብተህ **'Inbox ፈትሽ'** በል።",
+                "⚠️ አዲሱን ሰርቨር እየተጠቀምን ነው። Facebook ላይ አስገባና **'Inbox ፈትሽ'** በል።",
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
