@@ -119,41 +119,36 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         await query.edit_message_text(f"✅ **ኢሜይልህ:**\n`{email}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-# --- Main Bot Setup ---
-global_app = None
-
-async def get_application():
-    global global_app
-    if global_app is None:
-        global_app = ApplicationBuilder().token(TOKEN).build()
-        await global_app.initialize()
-        global_app.add_handler(CommandHandler("start", start))
-        global_app.add_handler(CallbackQueryHandler(button_handler))
-    return global_app
-
 # --- Vercel Route ---
 @app.route('/', methods=['GET'])
 def home():
-    return "Bot is Running! (Timeout Fixed)"
+    return "Bot is Running! (Loop Issue Fixed)"
 
 @app.route('/api/index', methods=['POST'])
 def webhook():
     if not TOKEN:
-        return jsonify({"error": "No Token"}), 200 # 200 እንመልሳለን Telegram እንዳይቆም
+        return jsonify({"error": "No Token"}), 200
     try:
+        # 🔥 FIX: ሁሌም አዲስ Loop እና አዲስ App መገንባት (Global መጠቀም ያቆማል)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        bot_app = loop.run_until_complete(get_application())
         
-        # ደህንነቱ የተጠበቀ Update processing
-        try:
-            update = Update.de_json(request.get_json(force=True), bot_app.bot)
-            loop.run_until_complete(bot_app.process_update(update))
-        except Exception as inner_e:
-            print(f"Update Processing Error: {inner_e}")
+        bot_app = ApplicationBuilder().token(TOKEN).build()
+        loop.run_until_complete(bot_app.initialize()) # Initialize application
         
+        # Handlers መጨመር
+        bot_app.add_handler(CommandHandler("start", start))
+        bot_app.add_handler(CallbackQueryHandler(button_handler))
+        
+        # Update ማስተናገድ
+        update = Update.de_json(request.get_json(force=True), bot_app.bot)
+        loop.run_until_complete(bot_app.process_update(update))
+        
+        # ጨርሰን Shutdown ማድረግ
+        loop.run_until_complete(bot_app.shutdown())
         loop.close()
-        return "OK" # ሁሌም OK እንመልሳለን
+        
+        return "OK"
     except Exception as e:
         print(f"Fatal Error: {e}")
-        return "OK" # Error ቢፈጠርም OK እንላለን
+        return "OK"
