@@ -94,7 +94,7 @@ async def get_bot_app():
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/api/index', methods=['GET', 'POST'])
-def handler():
+def webhook(): # <--- ስሙ ተቀይሯል (ከ handler ወደ webhook)
     if request.method == 'GET':
         return "Temp Mail Bot is Running! 🚀"
 
