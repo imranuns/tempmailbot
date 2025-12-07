@@ -3,68 +3,43 @@ import asyncio
 import requests
 import random
 import string
-import json
 from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from bs4 import BeautifulSoup # 🔥 አዲሱ የጽሁፍ ማጽጃ
 
 app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
-
-# --- Mail.tm API Engine ---
 BASE_URL = "https://api.mail.tm"
+
+# --- Helper Functions ---
 
 def get_random_string(length=8):
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
-def clean_html_content(html_text):
-    """
-    🔥 Advanced Feature:
-    የተዝረከረከ HTML ኮድን አጥፍቶ ንጹህ ጽሁፍ ብቻ ያወጣል።
-    """
-    try:
-        if not html_text:
-            return "No Content"
-        soup = BeautifulSoup(html_text, "html.parser")
-        
-        # Link እንዳይጠፋ URLላቸውን እናውጣ
-        for a in soup.find_all('a', href=True):
-            a.replace_with(f"{a.get_text()} ({a['href']})")
-            
-        text = soup.get_text(separator="\n")
-        
-        # ባዶ ቦታዎችን ማጽዳት
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        return "\n".join(lines)
-    except:
-        return html_text
-
 def create_account():
     try:
+        # ዶሜይን ማምጣት
         domains_resp = requests.get(f"{BASE_URL}/domains", timeout=5)
-        if domains_resp.status_code != 200:
-            return None
+        if domains_resp.status_code != 200: return None
         
         domain_list = domains_resp.json()['hydra:member']
-        if not domain_list:
-            return None
+        if not domain_list: return None
         domain = domain_list[0]['domain']
         
+        # አካውንት መፍጠር
         username = get_random_string(6)
         password = get_random_string(8)
         address = f"{username}@{domain}"
         
-        headers = {"Content-Type": "application/json"}
         data = {"address": address, "password": password}
+        headers = {"Content-Type": "application/json"}
         
         reg_resp = requests.post(f"{BASE_URL}/accounts", json=data, headers=headers, timeout=5)
         
         if reg_resp.status_code == 201:
             return {"email": address, "password": password}
         return None
-    except Exception as e:
-        print(f"Error: {e}")
+    except:
         return None
 
 def get_token(email, password):
@@ -91,6 +66,7 @@ def check_messages(token):
 def get_message_content(token, msg_id):
     try:
         headers = {"Authorization": f"Bearer {token}"}
+        # ቀጥታ መልእክቱን እናመጣለን
         resp = requests.get(f"{BASE_URL}/messages/{msg_id}", headers=headers, timeout=5)
         if resp.status_code == 200:
             return resp.json()
@@ -104,9 +80,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🚀 አዲስ ኢሜይል ፍጠር", callback_data='gen_email')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "👋 **ሰላም! እኔ Temp Mail Bot (Advanced) ነኝ።**\n\n"
-        "Facebook, TikTok እና Instagram የሚቀበሉት **Clean Email** እሰራለሁ።\n\n"
-        "ለመጀመር ከታች ያለውን ይጫኑ። 👇", 
+        "👋 **Temp Mail Bot (Speed Mode)**\n\n"
+        "Facebook እና TikTok በፍጥነት እንዲከፍት ተደርጎ የተስተካከለ። 👇", 
         reply_markup=reply_markup, parse_mode='Markdown'
     )
 
@@ -115,8 +90,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == 'gen_email':
-        await query.answer("⚙️ ፕሮፌሽናል አካውንት እየተከፈተ ነው...")
-        
+        await query.answer("⚙️ በመክፈት ላይ...")
         account = create_account()
         
         if account:
@@ -131,18 +105,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await query.edit_message_text(
                 f"✅ **ኢሜይል ተፈጥሯል!**\n\n"
-                f"📧 **Email:** `{email}`\n"
-                f"🔑 **Password:** `{password}`\n\n"
-                "⚠️ ይህንን ኢሜይል Copy አድርገህ ተጠቀም። መልእክት ሲላክ **'Inbox ፈትሽ'** በል።",
+                f"`{email}`\n\n"
+                "⚠️ Facebook ላይ ይህን ኢሜይል አስገባና Code ሲልክልህ **'Inbox ፈትሽ'** በል።",
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
-            await query.edit_message_text("❌ Error! Server Busy.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Try Again", callback_data='gen_email')]]))
+            await query.edit_message_text("❌ Error. Try Again.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Try Again", callback_data='gen_email')]]))
 
     elif data.startswith('chk|'):
         try:
             _, password, email = data.split('|')
-            await query.answer("🔄 Inbox በመታደስ ላይ...")
+            # ቶሎ ምላሽ እንስጥ (Loading...)
+            await query.answer("🔄 Inbox በመፈተሽ ላይ...")
             
             token = get_token(email, password)
             if not token:
@@ -157,37 +131,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             
             if not messages:
-                await query.edit_message_text(
-                    f"📭 **Inbox ባዶ ነው!**\n\n"
-                    f"👤 `{email}`\n\n"
-                    "⏳ መልእክት ለመድረስ ከ 10-30 ሰከንድ ሊፈጅ ይችላል። ትንሽ ቆይተው ይሞክሩ።",
-                    reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
-                )
+                # ባዶ ከሆነ ዝም እንዳይል Edit እናደርገዋለን
+                try:
+                    await query.edit_message_text(
+                        f"📭 **ባዶ ነው!**\n\n"
+                        f"`{email}`\n\n"
+                        "⏳ የ Facebook ኮድ ለመምጣት ትንሽ ይቆያል። ደጋግመህ Check በል።",
+                        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
+                    )
+                except:
+                    pass # መልእክቱ ካልተቀየረ (ያው ከሆነ) ችግር የለም
             else:
-                # መልእክት አለ! አሁን እናሳምረው
+                # መልእክት አለ!
                 last_msg = messages[0]
                 full_content = get_message_content(token, last_msg['id'])
                 
                 if full_content:
-                    sender_name = full_content.get('from', {}).get('name', '')
-                    sender_addr = full_content.get('from', {}).get('address', 'Unknown')
-                    subject = full_content.get('subject', '(No Subject)')
+                    sender_name = full_content.get('from', {}).get('name', 'Unknown')
+                    subject = full_content.get('subject', 'No Subject')
                     
-                    # 🔥 HTML Clean Up Logic
-                    raw_html = full_content.get('html', [])
-                    if raw_html:
-                        body_text = clean_html_content(raw_html[0])
-                    else:
-                        body_text = full_content.get('text', 'No Content')
+                    # 🔥 ወሳኙ ለውጥ: እኛ አናጸዳውም፣ ሰርቨሩ ያጸዳውን 'text' እንቀበላለን
+                    # ይሄ በጣም ፈጣን ነው!
+                    body_text = full_content.get('text', '') 
+                    if not body_text:
+                        body_text = full_content.get('intro', 'No Content')
 
-                    # ቆንጆ እይታ (Format)
+                    # ቆንጆ እይታ
                     formatted_msg = (
-                        f"📬 **አዲስ መልእክት ገብቷል!**\n"
-                        f"━━━━━━━━━━━━━━━━\n"
-                        f"👤 **From:** {sender_name} (`{sender_addr}`)\n"
+                        f"📬 **መልእክት ገብቷል!**\n"
+                        f"──────────────\n"
+                        f"👤 **From:** {sender_name}\n"
                         f"📌 **Subject:** {subject}\n"
-                        f"━━━━━━━━━━━━━━━━\n\n"
-                        f"{body_text[:3500]}" # ቴሌግራም እንዳይጨናነቅ እንቆርጠዋለን
+                        f"──────────────\n\n"
+                        f"{body_text[:3000]}" # በጣም እንዳይረዝም
                     )
 
                     back_kb = [[InlineKeyboardButton("🔙 ተመለስ", callback_data=f"back|{password}|{email}")]]
@@ -198,8 +174,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         parse_mode='Markdown'
                     )
         except Exception as e:
+            # ስህተት ከተፈጠረ ዝም እንዳይል
             print(f"Error: {e}")
-            await query.answer("Error checking mail", show_alert=True)
+            await query.answer("❌ Error checking mail. Try again.", show_alert=True)
 
     elif data.startswith('back|'):
         _, password, email = data.split('|')
@@ -219,7 +196,7 @@ async def setup_application():
 @app.route('/api/index', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        return "Temp Mail Bot (Advanced) is Running! 🚀"
+        return "Temp Mail Bot (Speed Mode) is Running! 🚀"
 
     if request.method == 'POST':
         if not TOKEN:
