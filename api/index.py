@@ -120,13 +120,13 @@ def check_guerrilla_mail(account):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("📧 መደበኛ ኢሜይል (Mail.tm)", callback_data='gen_tm')],
-        [InlineKeyboardButton("🔥 ለ Facebook (Guerrilla)", callback_data='gen_gr')]
+        [InlineKeyboardButton("📧 መደበኛ ኢሜይል (Standard)", callback_data='gen_tm')],
+        [InlineKeyboardButton("🔥 አማራጭ ሰርቨር (Alternative)", callback_data='gen_gr')]
     ]
     await update.message.reply_text(
         "👋 **Temp Mail Bot (Hybrid)**\n\n"
-        "ፌስቡክ እምቢ ካለህ **'ለ Facebook'** የሚለውን ሞክር።\n"
-        "Guerrilla Mail አንዳንድ ጊዜ Facebookን ያልፋል! 👇", 
+        "ለማንኛውም ድረገጽ ምዝገባ የሚሆን ጊዜያዊ ኢሜይል ያግኙ።\n"
+        "አንኛው ሰርቨር እምቢ ካለ፣ ሌላኛው አማራጭ ሊሰራ ይችላል። 👇", 
         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
     )
 
@@ -144,24 +144,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             account = create_guerrilla_account()
             
         if account:
-            # መረጃውን በ JSON stringነት Button ላይ እንለጥፈው (ለማስታወስ)
-            # ማስጠንቀቂያ: Telegram callback limit 64 bytes ነው!
-            # ስለዚህ መረጃውን ማሳጠር አለብን።
-            
             if account['type'] == 'tm':
-                # Mail.tm: chk|tm|password|email
-                # Email ረጅም ሊሆን ስለሚችል አጭር ዘዴ እንጠቀም:
-                # ለጊዜው Full data በ Text ላይ እናሳይና፣ User ሲነካ እንደገና Login እንዲያደርግ እናድርግ?
-                # አይ፣ ለቀላልነት: 
-                # chk|tm|pass|email (እንሞክራለን)
                 safe_data = f"chk|tm|{account['password']}|{account['email']}"
             else:
-                # Guerrilla: chk|gr|sid
                 safe_data = f"chk|gr|{account['sid']}"
 
-            # 64 Byte Check
             if len(safe_data.encode('utf-8')) > 64:
-                 # በጣም ከረዘመ Error እንዳይፈጥር
                  await query.edit_message_text("❌ ኢሜይሉ በጣም ረዘመ! እባክህ እንደገና ሞክር።", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Retry", callback_data=data)]]))
                  return
 
@@ -170,12 +158,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🔄 ሌላ አይነት", callback_data='start_menu')]
             ]
             
-            provider_name = "Mail.tm/gw" if account['type'] == 'tm' else "Guerrilla (SharkLasers)"
+            provider_name = "Standard" if account['type'] == 'tm' else "Alternative"
             
             await query.edit_message_text(
                 f"✅ **ኢሜይል ተፈጥሯል!** ({provider_name})\n\n"
                 f"`{account['email']}`\n\n"
-                "ይህንን Copy አድርገህ ተጠቀም። መልእክት ሲላክ **'Inbox ፈትሽ'** በል።",
+                "ይህንን Copy አድርገው በተፈለገው ድረገጽ ላይ ይጠቀሙ። መልእክት ሲላክ **'Inbox ፈትሽ'** ይበሉ።",
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
@@ -184,10 +172,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'start_menu':
         # ወደ ዋና ሜኑ መመለስ
         keyboard = [
-            [InlineKeyboardButton("📧 መደበኛ (Mail.tm)", callback_data='gen_tm')],
-            [InlineKeyboardButton("🔥 ለ Facebook (Guerrilla)", callback_data='gen_gr')]
+            [InlineKeyboardButton("📧 መደበኛ ኢሜይል (Standard)", callback_data='gen_tm')],
+            [InlineKeyboardButton("🔥 አማራጭ ሰርቨር (Alternative)", callback_data='gen_gr')]
         ]
-        await query.edit_message_text("መረጣህን ቀይር:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text("የሚፈልጉትን የኢሜይል አይነት ይምረጡ:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     # --- CHECK HANDLERS ---
     elif data.startswith('chk|'):
@@ -205,7 +193,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             password = parts[2]
             email = parts[3]
             email_display = email
-            # የትኛው url እንደሆነ ስለማናውቅ ሁለቱንም እንሞክር
             for url in TM_PROVIDERS:
                 acct = {"url": url, "email": email, "password": password}
                 res = check_tm_mail(acct)
@@ -216,8 +203,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif engine == 'gr':
             # chk|gr|sid
             sid = parts[2]
-            # Email ለማወቅ አንችልም (ከ SID) ግን ችግር የለም
-            email_display = "Guerrilla Mail" 
+            email_display = "Alternative Mail" 
             messages = check_guerrilla_mail({"sid": sid})
 
         # ውጤት ማሳየት
@@ -232,7 +218,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text(
                     f"📭 **Inbox ባዶ ነው!** ({current_time})\n\n"
                     f"ኢሜይል: `{email_display}`\n\n"
-                    "የ Facebook መልእክት ለመድረስ ጊዜ ሊወስድ ይችላል። እባክዎ ትንሽ ቆይተው ድጋሚ ይሞክሩ።",
+                    "እስካሁን ምንም መልእክት የለም። ኮድ ለመላክ ጊዜ ሊወስድ ስለሚችል እባክዎ ትንሽ ቆይተው ድጋሚ ይሞክሩ።",
                     reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
                 )
             except:
