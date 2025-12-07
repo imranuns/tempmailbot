@@ -28,37 +28,34 @@ def get_headers():
 
 def generate_email():
     """
-    አሁን የግድ API መጠየቅ አለብን (Access Denied እንዳይል)።
-    ግን የተለያዩ Domain እና User-Agent እንሞክራለን።
-    ከከሸፈ ግን እራሳችን እንፈጥራለን (Fallback) - ግን .com አንጠቀምም!
+    🔥 ዋና ማስተካከያ: 1secmail.com የሚለውን ዶሜይን ሙሉ ለሙሉ እናስወግዳለን!
+    Gmail እምቢ የሚለው እሱን ብቻ ስለሆነ፣ እሱን ከመጣ እንጥለዋለን።
     """
     url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
     
     # 1. መጀመሪያ API ለመጠየቅ እንሞክር
-    for _ in range(2):
+    for _ in range(3):
         try:
             headers = get_headers()
             response = requests.get(url, headers=headers, timeout=3)
             if response.status_code == 200:
                 email = response.json()[0]
-                if ".com" not in email: # .com ካልሆነ እንመርጠዋለን
-                    return email
-                # .com ከሆነም እንሞክረው (ከ API ስለመጣ ሊሰራ ይችላል)
+                # 🔥 FIX: @1secmail.com ከሆነ በፍጹም አንቀበልም! (Access Denied ይላል)
+                if "@1secmail.com" in email: 
+                    continue
                 return email
         except:
             continue
             
-    # 2. 🔥 FALLBACK (ዋናው መፍትሄ): API እምቢ ካለ እራሳችን እንፍጠር!
-    # ማሳሰቢያ: 1secmail.comን እዚህ አናካትትም (እሱ ነው Access Denied የሚለው)
+    # 2. 🔥 FALLBACK: API እምቢ ካለ ወይም .com ብቻ ከሰጠ፣ እራሳችን ምርጥ ዶሜይን እንፍጠር
     try:
-        # Random ስም እንፍጠር (ምሳሌ: xk92ms)
         random_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-        # እነዚህ ዶሜይኖች ብዙ ጊዜ አይዘጉም (Catch-all ናቸው)
-        domains = ["1secmail.net", "1secmail.org", "esiix.com", "wwjmp.com"]
+        # እነዚህ ለ Gmail በጣም አስተማማኝ ናቸው
+        domains = ["esiix.com", "wwjmp.com", "1secmail.net", "1secmail.org"]
         random_domain = random.choice(domains)
         return f"{random_name}@{random_domain}"
     except:
-        return "tempuser123@1secmail.org"
+        return "tempuser123@esiix.com"
 
 def check_email(login, domain):
     url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}"
@@ -97,7 +94,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == 'gen_email':
         try:
-            await query.edit_message_text("⏳ ኢሜይል እየፈጠርኩ ነው...")
+            await query.edit_message_text("⏳ አስተማማኝ ኢሜይል እየፈለኩ ነው...")
         except:
             pass
 
@@ -114,7 +111,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
             )
         else:
-            # Fallback ስላለን ይሄ ሊፈጠር አይችልም፣ ግን ለመጠባበቂያ
             keyboard = [[InlineKeyboardButton("🔄 ድጋሚ ሞክር", callback_data='gen_email')]]
             await query.edit_message_text("❌ ስህተት! ድጋሚ ሞክር።", reply_markup=InlineKeyboardMarkup(keyboard))
 
