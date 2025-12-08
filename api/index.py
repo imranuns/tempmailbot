@@ -30,7 +30,7 @@ HEADERS = {
 # --- Database Functions ---
 def get_db():
     """ዳታቤዙን ያመጣል (Default structure ካልኖረ ይፈጥራል)"""
-    default_db = {"users": [], "channel": None, "daily": {"date": "", "active": []}}
+    default_db = {"users": [], "channels": [], "daily": {"date": "", "active": []}}
     
     if not JSONBIN_ID or not JSONBIN_KEY: return default_db
     
@@ -38,9 +38,15 @@ def get_db():
         resp = requests.get(JSONBIN_URL, headers=HEADERS)
         if resp.status_code == 200:
             data = resp.json().get("record", {})
-            # የጎደለ ነገር ካለ እንሙላ (Migration)
+            # Migration & Defaults
             if "users" not in data: data["users"] = []
-            if "channel" not in data: data["channel"] = None
+            
+            # 🔥 Update: Support Multiple Channels
+            if "channels" not in data:
+                # If old single 'channel' exists, move it to list
+                old_channel = data.pop("channel", None)
+                data["channels"] = [old_channel] if old_channel else []
+                
             if "daily" not in data: data["daily"] = {"date": "", "active": []}
             return data
     except: pass
@@ -56,27 +62,21 @@ def update_db(data):
 def track_user_activity(user_id):
     """ተጠቃሚ ሲገባ መመዝገብ (ለ Total እና Daily Stats)"""
     if not JSONBIN_ID or not JSONBIN_KEY: return
-    
-    # ይህ ሂደት ጊዜ ሊወስድ ስለሚችል Vercel እንዳይጨናነቅ በ try block እንያዘው
     try:
         db = get_db()
         changed = False
         
-        # 1. Total Users (ጠቅላላ)
         if user_id not in db["users"]:
             db["users"].append(user_id)
             changed = True
             
-        # 2. Daily Stats (የዛሬ)
         today = datetime.now().strftime("%Y-%m-%d")
         daily = db.get("daily", {"date": today, "active": []})
         
-        # ቀን ከተቀየረ Reset አድርግ
         if daily.get("date") != today:
             daily = {"date": today, "active": []}
             changed = True
             
-        # ዛሬ ካልተመዘገበ መዝግበው
         if user_id not in daily["active"]:
             daily["active"].append(user_id)
             changed = True
@@ -85,17 +85,24 @@ def track_user_activity(user_id):
         
         if changed:
             update_db(db)
-    except:
-        pass
+    except: pass
 
-def set_force_channel(channel):
+# --- Channel Management Functions ---
+def add_force_channel(channel):
     db = get_db()
-    db["channel"] = channel
-    update_db(db)
+    if channel not in db["channels"]:
+        db["channels"].append(channel)
+        update_db(db)
 
-def get_force_channel():
+def remove_force_channel(channel):
     db = get_db()
-    return db.get("channel")
+    if channel in db["channels"]:
+        db["channels"].remove(channel)
+        update_db(db)
+
+def get_force_channels():
+    db = get_db()
+    return db.get("channels", [])
 
 def get_all_users():
     db = get_db()
@@ -177,22 +184,39 @@ def check_guerrilla_mail(account):
     return []
 
 # ===========================
-# 🔐 Force Join Logic
+# 🔐 Force Join Logic (Multi-Channel)
 # ===========================
 async def check_subscription(user_id, bot):
-    force_channel = get_force_channel()
-    if not force_channel: return True
-    try:
-        member = await bot.get_chat_member(chat_id=force_channel, user_id=user_id)
-        if member.status in ['left', 'kicked']: return False
-        return True
-    except: return True
+    """ተጠቃሚው ሁሉንም ቻናሎች መቀላቀሉን ያረጋግጣል"""
+    channels = get_force_channels()
+    if not channels: return True
+    
+    for channel in channels:
+        try:
+            member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
+            if member.status in ['left', 'kicked']:
+                return False
+        except:
+            # ቦቱ ቻናሉ ላይ ከሌለ ወይም ስህተት ካለ፣ ተጠቃሚው እንዳይዘጋ ዝም ብሎ ይለፍ
+            continue
+    return True
 
 async def send_force_join_message(update, context):
-    force_channel = get_force_channel()
-    if not force_channel: return
-    keyboard = [[InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{force_channel.replace('@', '')}")], [InlineKeyboardButton("✅ Verify", callback_data='verify_join')]]
-    text = "⛔ **ቦቱን ለመጠቀም መጀመሪያ ቻናላችንን ይቀላቀሉ።**"
+    channels = get_force_channels()
+    if not channels: return
+
+    keyboard = []
+    # ለእያንዳንዱ ቻናል Button እንፍጠር
+    for idx, channel in enumerate(channels):
+        btn_text = f"📢 Join Channel {idx+1}"
+        # Telegram username link format
+        url = f"https://t.me/{channel.replace('@', '')}"
+        keyboard.append([InlineKeyboardButton(btn_text, url=url)])
+    
+    keyboard.append([InlineKeyboardButton("✅ Verify Join", callback_data='verify_join')])
+    
+    text = "⛔ **ቦቱን ለመጠቀም መጀመሪያ የሚከተሉትን ቻናሎች ይቀላቀሉ:**"
+    
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
     else:
@@ -207,7 +231,7 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    track_user_activity(user_id) # 🔥 Record Stats
+    track_user_activity(user_id)
     
     if not await check_subscription(user_id, context.bot):
         await send_force_join_message(update, context)
@@ -241,61 +265,88 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("✅ Welcome!")
             await show_main_menu(update, context)
         else:
-            await query.answer("❌ Not Joined Yet!", show_alert=True)
+            await query.answer("❌ ሁሉንም ቻናሎች አልተቀላቀሉም!", show_alert=True)
         return
 
-    # --- ADMIN PANEL & STATS ---
+    # --- ADMIN PANEL (Advanced) ---
     if data == 'admin_panel':
         if user_id != ADMIN_ID: 
             await query.answer("⛔ Access Denied!", show_alert=True)
             return
         
-        # 🔥 ስታቲስቲክስ ማምጣት
+        # Stats
         db = get_db()
         total_users = len(db.get("users", []))
         
         today = datetime.now().strftime("%Y-%m-%d")
         daily_stats = db.get("daily", {})
+        daily_users = len(daily_stats.get("active", [])) if daily_stats.get("date") == today else 0
         
-        # ቀን ከተቀየረ 0 ነው፣ ካልሆነ የዛሬውን አሳይ
-        if daily_stats.get("date") == today:
-            daily_users = len(daily_stats.get("active", []))
-        else:
-            daily_users = 0
-            
-        channel_status = db.get("channel") if db.get("channel") else "Not Set"
+        channels = db.get("channels", [])
+        ch_count = len(channels)
         
         keyboard = [
-            [InlineKeyboardButton("📢 Set Channel", callback_data='set_channel'), InlineKeyboardButton("❌ Remove Channel", callback_data='remove_channel')],
-            [InlineKeyboardButton("📡 Broadcast", callback_data='start_broadcast')],
-            [InlineKeyboardButton("🔙 Back", callback_data='start_menu')]
+            [InlineKeyboardButton("📡 Broadcast Msg", callback_data='start_broadcast')],
+            [InlineKeyboardButton("➕ Add Channel", callback_data='add_channel_ask'), InlineKeyboardButton("➖ Delete Channel", callback_data='del_channel_list')],
+            [InlineKeyboardButton("🔙 Exit", callback_data='start_menu')]
         ]
         
         stats_text = (
-            f"👨‍✈️ **Admin Dashboard**\n\n"
-            f"📊 **Statistics:**\n"
-            f"👥 ጠቅላላ ተጠቃሚ: `{total_users}`\n"
-            f"📅 የዛሬ ተጠቃሚ: `{daily_users}`\n\n"
-            f"📢 Channel: `{channel_status}`"
+            f"👮‍♂️ **Advanced Admin Control**\n\n"
+            f"📊 **Real-time Stats:**\n"
+            f"👥 All Time Users: `{total_users}`\n"
+            f"📅 Active Today: `{daily_users}`\n"
+            f"📢 Force Channels: `{ch_count}`\n\n"
+            f"👇 Select an action below:"
         )
         await query.edit_message_text(stats_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
 
-    elif data == 'set_channel':
+    # --- CHANNEL MANAGEMENT ---
+    elif data == 'add_channel_ask':
         if user_id != ADMIN_ID: return
-        await context.bot.send_message(chat_id=user_id, text="📢 **Set Channel**\n\nቻናሉን ለዚህ Reply አድርገህ ላክ (Example: `@my_channel`)", reply_markup=ForceReply(selective=True), parse_mode='Markdown')
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="📢 **Add New Channel**\n\nየቻናሉን Username (በ @ የሚጀምር) ለዚህ መልእክት **Reply** አድርገው ይላኩ።\n\nምሳሌ: `@my_channel`",
+            parse_mode='Markdown',
+            reply_markup=ForceReply(selective=True)
+        )
         return
 
-    elif data == 'remove_channel':
+    elif data == 'del_channel_list':
         if user_id != ADMIN_ID: return
-        set_force_channel(None)
-        await query.answer("✅ Channel Removed!", show_alert=True)
-        await show_main_menu(update, context)
+        channels = get_force_channels()
+        if not channels:
+            await query.answer("⚠️ No channels set!", show_alert=True)
+            return
+        
+        keyboard = []
+        for ch in channels:
+            # Click to delete specific channel
+            keyboard.append([InlineKeyboardButton(f"🗑️ Remove {ch}", callback_data=f"del_ch|{ch}")])
+        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data='admin_panel')])
+        
+        await query.edit_message_text("❌ **Select a Channel to Remove:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
 
+    elif data.startswith('del_ch|'):
+        if user_id != ADMIN_ID: return
+        channel_to_remove = data.split('|')[1]
+        remove_force_channel(channel_to_remove)
+        await query.answer(f"🗑️ Removed {channel_to_remove}", show_alert=True)
+        # Refresh the list
+        await button_handler(update, context) # Re-trigger list view? No, easier to go back to panel
+        
+        # Manually trigger admin panel again to refresh stats
+        # Create a mock query data update? No, just call the logic
+        query.data = 'admin_panel'
+        await button_handler(update, context)
+        return
+
+    # --- BROADCAST ---
     elif data == 'start_broadcast':
         if user_id != ADMIN_ID: return
-        await context.bot.send_message(chat_id=user_id, text="📢 **Broadcast**\n\nማስታወቂያውን ለዚህ Reply አድርገህ ላክ።", reply_markup=ForceReply(selective=True), parse_mode='Markdown')
+        await context.bot.send_message(chat_id=user_id, text="📢 **Broadcast Mode**\n\nማስታወቂያውን ለዚህ Reply አድርገህ ላክ።", reply_markup=ForceReply(selective=True), parse_mode='Markdown')
         return
 
     elif data == 'ask_support':
@@ -306,14 +357,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start(update, context)
         return
 
-    # --- TEMP MAIL ---
+    # --- TEMP MAIL LOGIC ---
     if not await check_subscription(user_id, context.bot):
         await send_force_join_message(update, context)
         return
 
     if data in ['gen_tm', 'gen_gr']:
         await query.answer("⚙️ Processing...")
-        track_user_activity(user_id) # Update stats
+        track_user_activity(user_id)
         account = create_tm_account() if data == 'gen_tm' else create_guerrilla_account()
         
         if account:
@@ -361,17 +412,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     msg = update.message
-    track_user_activity(user_id) # Message ሲልክም እንቁጠረው
+    track_user_activity(user_id) 
     
     if msg.reply_to_message and msg.reply_to_message.from_user.is_bot:
         original = msg.reply_to_message.text
         
-        if "Set Channel" in original and user_id == ADMIN_ID:
+        # 1. ADD CHANNEL
+        if "Add New Channel" in original and user_id == ADMIN_ID:
             ch = msg.text.strip()
             if not ch.startswith("@"): ch = "@" + ch
-            set_force_channel(ch)
-            await msg.reply_text(f"✅ Channel Set: `{ch}`")
+            add_force_channel(ch)
+            await msg.reply_text(f"✅ Channel Added: `{ch}`\n\nDon't forget to make the bot ADMIN in that channel!")
 
+        # 2. BROADCAST
         elif "Broadcast" in original and user_id == ADMIN_ID:
             users_list = get_all_users()
             success = 0
@@ -387,6 +440,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except: pass
             await status.edit_text(f"✅ Broadcast Sent: {success}")
         
+        # 3. SUPPORT
         elif "Support" in original:
             if ADMIN_ID:
                 try:
