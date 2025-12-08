@@ -4,20 +4,19 @@ import random
 import string
 import asyncio
 from flask import Flask, request, jsonify
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
 
-# 🔥 FIX: Get ADMIN_ID from Environment Variable (Safe for GitHub)
-# Don't forget to add 'ADMIN_ID' in Vercel Settings!
+# 🔥 Admin ID from Environment Variable
 try:
     ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 except ValueError:
     ADMIN_ID = 0
 
-# ለ Broadcast ተጠቃሚዎችን መያዣ (ማሳሰቢያ: Vercel ላይ ይሄ ቋሚ አይደለም)
+# Broadcast User List (In-Memory for Vercel)
 users_db = set()
 
 # --- Engines ---
@@ -100,36 +99,25 @@ def check_guerrilla_mail(account):
 # ===========================
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ይሄ IDህን ለማወቅ የሚረዳ ድብቅ ኮድ ነው"""
-    await update.message.reply_text(f"🆔 ያንተ መታወቂያ ቁጥር: `{update.effective_user.id}`\n\nይሄንን ቁጥር Vercel ላይ 'ADMIN_ID' በሚል Environment Variable አስገባው።", parse_mode='Markdown')
+    await update.message.reply_text(f"🆔 ID: `{update.effective_user.id}`", parse_mode='Markdown')
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     users_db.add(user_id) 
-    context.user_data['state'] = None # Clear any previous state
-
-    # ዋና ሜኑ አቀራረብ
     await show_main_menu(update, context)
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     keyboard = [
         [InlineKeyboardButton("📩 ኢሜይል ፍጠር (Standard)", callback_data='gen_tm')],
         [InlineKeyboardButton("🔥 አማራጭ (Alternative)", callback_data='gen_gr')],
         [InlineKeyboardButton("🆘 እርዳታ (Support)", callback_data='ask_support')]
     ]
-    
-    # Admin መሆኑን ማረጋገጥ (ቁጥሩ ትክክል ከሆነ ብቻ ይታያል)
     if user_id == ADMIN_ID:
         keyboard.append([InlineKeyboardButton("📢 Admin Dashboard", callback_data='admin_panel')])
 
-    text = (
-        "👋 **Temp Mail Bot**\n\n"
-        "ለማንኛውም ድረገጽ እና ሶሻል ሚዲያ ምዝገባ የሚሆን ጊዜያዊ ኢሜይል ያግኙ።\n"
-        "አንኛው ሰርቨር ካልሰራ፣ 'አማራጭ' የሚለውን ይሞክሩ። 👇"
-    )
-
+    text = "👋 **Temp Mail Bot**\n\nለማንኛውም ድረገጽ እና ሶሻል ሚዲያ ምዝገባ የሚሆን ጊዜያዊ ኢሜይል ያግኙ። 👇"
+    
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
     else:
@@ -145,41 +133,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID: 
             await query.answer("⛔ Access Denied!", show_alert=True)
             return
-            
-        keyboard = [
-            [InlineKeyboardButton("📢 Broadcast (ማስታወቂያ)", callback_data='start_broadcast')],
-            [InlineKeyboardButton("🔙 ዋና ሜኑ", callback_data='start_menu')]
-        ]
-        await query.edit_message_text("👨‍✈️ **Admin Dashboard**\n\nማስታወቂያ ለተጠቃሚዎች መላክ ይችላሉ።", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        keyboard = [[InlineKeyboardButton("📢 Broadcast", callback_data='start_broadcast')], [InlineKeyboardButton("🔙 Back", callback_data='start_menu')]]
+        await query.edit_message_text("👨‍✈️ **Admin Dashboard**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
 
+    # --- BROADCAST (FORCE REPLY) ---
     elif data == 'start_broadcast':
         if user_id != ADMIN_ID: return
-        context.user_data['state'] = 'waiting_broadcast'
-        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel_action')]]
-        await query.edit_message_text(
-            "📢 **Broadcast Mode**\n\n"
-            "መላክ የሚፈልጉትን ማስታወቂያ (ጽሁፍ፣ ፎቶ፣ አዝራር) አሁን ይላኩ።\n"
-            "ልክ እንደላኩት አድርጌ ኮፒ አደርገዋለሁ።",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
+        # Vercel ላይ State ስለማይሰራ ForceReply እንጠቀማለን
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="📢 **Broadcast Mode**\n\nመላክ የሚፈልጉትን ማስታወቂያ (ጽሁፍ፣ ፎቶ፣ ቪዲዮ) ለዚህ መልእክት **Reply** አድርገው ይላኩ።",
+            parse_mode='Markdown',
+            reply_markup=ForceReply(selective=True)
         )
         return
 
-    # --- SUPPORT SYSTEM ---
+    # --- SUPPORT (FORCE REPLY) ---
     elif data == 'ask_support':
-        context.user_data['state'] = 'waiting_support'
-        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel_action')]]
-        await query.edit_message_text(
-            "🆘 **Support Center**\n\n"
-            "እባክዎ ያጋጠመዎትን ችግር እዚህ ይፃፉ። መልእክቱ በቀጥታ ለቦቱ ባለቤት ይላካል።",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="🆘 **Support Center**\n\nችግርዎን ለዚህ መልእክት **Reply** አድርገው ይፃፉ። አድሚኑ ያገኘዋል።",
+            parse_mode='Markdown',
+            reply_markup=ForceReply(selective=True)
         )
         return
         
-    elif data == 'cancel_action':
-        context.user_data['state'] = None
+    elif data == 'start_menu':
         await show_main_menu(update, context)
         return
 
@@ -198,24 +178,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  await query.edit_message_text("❌ Error. Retry.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Retry", callback_data=data)]]))
                  return
 
-            keyboard = [
-                [InlineKeyboardButton("📩 Inbox ፈትሽ", callback_data=safe_data)],
-                [InlineKeyboardButton("🔙 ዋና ሜኑ", callback_data='start_menu')]
-            ]
-            
-            # ስም መቀየር (Generic Name)
+            keyboard = [[InlineKeyboardButton("📩 Inbox ፈትሽ", callback_data=safe_data)], [InlineKeyboardButton("🔙 ዋና ሜኑ", callback_data='start_menu')]]
             provider_name = "Standard Mail" if account['type'] == 'tm' else "Alternative Mail"
             
-            await query.edit_message_text(
-                f"✅ **ኢሜይል ተፈጥሯል!** ({provider_name})\n\n`{account['email']}`\n\n"
-                "ይህንን Copy አድርገው ይጠቀሙ። መልእክት ሲላክ **'Inbox ፈትሽ'** በል።",
-                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
-            )
+            await query.edit_message_text(f"✅ **ኢሜይል ተፈጥሯል!** ({provider_name})\n\n`{account['email']}`\n\nCopy አድርገው ይጠቀሙ።", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         else:
             await query.answer("Server Error. Try again.", show_alert=True)
-
-    elif data == 'start_menu':
-        await show_main_menu(update, context)
 
     elif data.startswith('chk|'):
         parts = data.split('|')
@@ -244,11 +212,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not messages:
             try:
-                await query.edit_message_text(
-                    f"📭 **Inbox ባዶ ነው!**\n\n`{email_display}`\n\n"
-                    "እስካሁን ምንም መልእክት የለም። ኮድ ለመምጣት ጊዜ ሊወስድ ስለሚችል ትንሽ ቆይተው ድጋሚ ይሞክሩ።",
-                    reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
-                )
+                await query.edit_message_text(f"📭 **Inbox ባዶ ነው!**\n\n`{email_display}`\n\nመልእክት እስኪገባ ይጠብቁ...", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
             except: pass
         else:
             msg = messages[0]
@@ -257,55 +221,46 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    state = context.user_data.get('state')
+    msg = update.message
     
-    # 1. BROADCAST
-    if state == 'waiting_broadcast' and user_id == ADMIN_ID:
-        success = 0
-        status_msg = await update.message.reply_text("⏳ Broadcast በመላክ ላይ...")
+    # 🔥 Check if it's a REPLY to a ForceReply message
+    if msg.reply_to_message and msg.reply_to_message.from_user.is_bot:
+        original_text = msg.reply_to_message.text
         
-        # ማስታወሻ: Vercel ላይ users_db ጊዜያዊ ነው።
-        # በቋሚነት ለመስራት Database ያስፈልጋል።
-        temp_users = list(users_db)
-        if not temp_users:
-             await status_msg.edit_text("❌ ምንም ተጠቃሚ አልተገኘም (Database Empty).")
-             context.user_data['state'] = None
-             return
+        # 1. BROADCAST HANDLING
+        if "Broadcast Mode" in original_text and user_id == ADMIN_ID:
+            success = 0
+            if not users_db:
+                await msg.reply_text("⚠️ No users found in memory (Vercel limitation).")
+                return
 
-        for uid in temp_users:
-            if uid == ADMIN_ID: continue
-            try:
-                # ሙሉ ሜሴጁን ኮፒ ማድረግ (Copy Message)
-                await context.bot.copy_message(chat_id=uid, from_chat_id=user_id, message_id=update.message.message_id)
-                success += 1
-            except: pass
-        
-        await status_msg.edit_text(f"✅ ተላከ: {success}")
-        context.user_data['state'] = None
-        
-    # 2. SUPPORT
-    elif state == 'waiting_support':
-        if ADMIN_ID:
-            try:
-                # መልእክቱን ለአድሚኑ Forward ማድረግ
-                user_info = f"🆘 **New Support!**\nUser: {update.effective_user.first_name} (ID: `{user_id}`)"
-                await context.bot.send_message(chat_id=ADMIN_ID, text=user_info, parse_mode='Markdown')
-                await context.bot.forward_message(chat_id=ADMIN_ID, from_chat_id=user_id, message_id=update.message.message_id)
-                
-                await update.message.reply_text("✅ መልእክትዎ ተልኳል። እናመሰግናለን!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ዋና ሜኑ", callback_data='start_menu')]]))
-            except Exception as e:
-                await update.message.reply_text(f"❌ Error sending to admin: {e}")
-        else:
-            await update.message.reply_text("❌ Admin ID አልተሞላም።")
+            for uid in users_db:
+                if uid == ADMIN_ID: continue
+                try:
+                    await context.bot.copy_message(chat_id=uid, from_chat_id=user_id, message_id=msg.message_id)
+                    success += 1
+                except: pass
             
-        context.user_data['state'] = None
+            await msg.reply_text(f"✅ Broadcast Sent: {success}")
+        
+        # 2. SUPPORT HANDLING
+        elif "Support Center" in original_text:
+            if ADMIN_ID:
+                try:
+                    await context.bot.send_message(chat_id=ADMIN_ID, text=f"🆘 **New Support!**\nUser: {update.effective_user.first_name} (`{user_id}`)", parse_mode='Markdown')
+                    await context.bot.forward_message(chat_id=ADMIN_ID, from_chat_id=user_id, message_id=msg.message_id)
+                    await msg.reply_text("✅ መልእክትዎ ተልኳል! አድሚኑ በቅርቡ ይመልሳል።")
+                except Exception as e:
+                    await msg.reply_text(f"❌ Error: {e}")
+            else:
+                await msg.reply_text("❌ Admin ID not configured.")
 
 async def setup_application():
     application = ApplicationBuilder().token(TOKEN).build()
     await application.initialize()
     
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("id", get_id)) # ID ማወቂያ
+    application.add_handler(CommandHandler("id", get_id))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_messages))
     
